@@ -1,0 +1,24 @@
+replicas: 1
+minimumMasterNodes: 1
+clusterName: "elasticsearch"
+nodeGroup: "master"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+esJavaOpts: "-Xmx512m -Xms512m"
+
+createCert: false
+protocol: http
+securityEnabled: false
+
+volumeClaimTemplate:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: elastiflix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: an619/elastiflix-backend:v0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 17700
+          envFrom:
+            - configMapRef:
+                name: app-config

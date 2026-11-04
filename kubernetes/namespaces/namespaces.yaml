@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastiflix
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-stack
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring

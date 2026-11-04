@@ -1,7 +1,15 @@
+image: "docker.elastic.co/elasticsearch/elasticsearch"
+imageTag: "8.5.1"
+imagePullPolicy: "IfNotPresent"
+
 replicas: 1
 minimumMasterNodes: 1
 clusterName: "elasticsearch"
 nodeGroup: "master"
+
+# Force HTTP instead of HTTPS
+protocol: http
+createCert: false
 
 resources:
   requests:
@@ -9,13 +17,31 @@ resources:
     memory: "512Mi"
   limits:
     cpu: "1000m"
-    memory: "1Gi"
+    memory: "2Gi"
 
-esJavaOpts: "-Xmx512m -Xms512m"
+esJavaOpts: "-Xms512m -Xmx512m"
 
-createCert: false
-protocol: http
-securityEnabled: false
+# Custom readiness probe without password check
+readinessProbe:
+  exec:
+    command:
+      - bash
+      - -c
+      - |
+        curl -s http://localhost:9200/_cluster/health | grep -qE '"status":"(green|yellow)"'
+  initialDelaySeconds: 30
+  timeoutSeconds: 30
+  periodSeconds: 10
+  successThreshold: 3
+  failureThreshold: 3
+
+# Force disable security at the config level
+esConfig:
+  elasticsearch.yml: |
+    xpack.security.enabled: false
+    xpack.security.transport.ssl.enabled: false
+    xpack.security.http.ssl.enabled: false
+    discovery.type: single-node
 
 volumeClaimTemplate:
   accessModes: ["ReadWriteOnce"]

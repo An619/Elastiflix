@@ -1,0 +1,31 @@
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  registry: docker.io
+  repository: bitnamilegacy/redis
+  tag: 7.2.4-debian-12-r5
+
+architecture: standalone
+auth:
+  enabled: true
+  password: "elastiflix-redis-pass"
+
+master:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+  livenessProbe:
+    initialDelaySeconds: 30
+    timeoutSeconds: 10
+  readinessProbe:
+    initialDelaySeconds: 30
+    timeoutSeconds: 10
+commonConfiguration: |
+  loadmodule ""

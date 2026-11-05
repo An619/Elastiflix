@@ -6,6 +6,9 @@ import SemanticConnector from "./SemanticConnector.js";
 import HybridConnector from "./HybridConnector.js";
 import { log, logged } from "./logger.js";
 
+import { createClient } from "redis";
+import amqp from "amqplib";
+
 const app = express();
 if (process.env.LOCAL) {
   app.use(
@@ -17,18 +20,62 @@ if (process.env.LOCAL) {
 }
 app.use(express.json());
 
-// Each route is wrapped so it emits one structured JSON log line per request:
-// method, path, status, duration_ms, the search term, and the result count.
-// That is what makes the Kibana dashboard possible.
-app.post("/api/search", logged("lexical", (s, q) => SearchConnector.onSearch(s, q)));
+// --- REDIS SETUP ---
+const redisClient = createClient({ url: process.env.REDIS_URL });
+redisClient.on("error", (err) => log.error({ event: "redis_error", error: err.message }));
+await redisClient.connect().catch((err) => log.error({ event: "redis_connect_fail", error: err.message }));
+
+// --- RABBITMQ SETUP ---
+let rabbitChannel;
+async function connectRabbitMQ() {
+  try {
+    const connection = await amqp.connect(process.env.RABBITMQ_URL);
+    rabbitChannel = await connection.createChannel();
+    await rabbitChannel.assertQueue("search_events", { durable: true });
+    log.info({ event: "rabbitmq_connected" });
+  } catch (err) {
+    log.error({ event: "rabbitmq_fail", error: err.message });
+  }
+}
+connectRabbitMQ();
+
+// --- CACHING WRAPPER ---
+const cachedSearch = async (req, res, next) => {
+  const { searchTerm } = req.body.state || {};
+  if (!searchTerm) return next(); // Only cache if there is a search term
+
+  const cacheKey = `search:${searchTerm}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      log.info({ event: "cache_hit", searchTerm });
+      return res.json(JSON.parse(cachedData));
+    }
+  } catch (err) {
+    log.error({ event: "cache_error", error: err.message });
+  }
+
+  // Intercept res.json to save the result to cache and send to RabbitMQ
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (body && body.results) {
+      redisClient.setEx(cacheKey, 300, JSON.stringify(body)).catch(() => { });
+
+      if (rabbitChannel) {
+        const message = JSON.stringify({ term: searchTerm, count: body.results.length, timestamp: new Date() });
+        rabbitChannel.sendToQueue("search_events", Buffer.from(message));
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+};
+
+app.post("/api/search", cachedSearch, logged("lexical", (s, q) => SearchConnector.onSearch(s, q)));
 app.post("/api/rerank/search", logged("rerank", (s, q) => RerankConnector.onSearch(s, q)));
 app.post("/api/semantic/search", logged("semantic", (s, q) => SemanticConnector.onSearch(s, q)));
 app.post("/api/hybrid/search", logged("hybrid", (s, q) => HybridConnector.onSearch(s, q)));
-// Autocomplete is deliberately NOT wrapped in logged(). It returns
-// {autocompletedResults, autocompletedSuggestions} -- no totalResults -- so
-// every call would log result_count: 0, and the search bar fires one request
-// per keystroke. That would bury the "top search terms" and "zero-result
-// searches" panels under half-typed prefixes that always look like misses.
+
 app.post("/api/autocomplete", async (req, res) => {
   const { state = {}, queryConfig = {} } = req.body ?? {};
   try {

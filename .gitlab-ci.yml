@@ -1,0 +1,66 @@
+stages:
+  - build
+  - security
+  - package
+
+variables:
+  DOCKER_DRIVER: overlay2
+  # Use GitLab's built-in registry variables
+  IMAGE_FRONTEND: $CI_REGISTRY_IMAGE/frontend
+  IMAGE_BACKEND: $CI_REGISTRY_IMAGE/backend
+
+# ----------------------------------------
+# Stage 1: Build & Test
+# ----------------------------------------
+build_frontend:
+  stage: build
+  image: node:22-alpine
+  script:
+    - cd frontend
+    - npm ci --legacy-peer-deps
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/build/
+    expire_in: 1 hour
+
+build_backend:
+  stage: build
+  image: node:22-alpine
+  script:
+    - cd backend
+    - npm ci
+    - npm test --if-present
+
+# ----------------------------------------
+# Stage 2: Security Scanning (DevSecOps)
+# ----------------------------------------
+trivy_scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy fs --exit-code 0 --severity HIGH,CRITICAL --no-progress .
+
+# ----------------------------------------
+# Stage 3: Package (Docker Build & Push)
+# ----------------------------------------
+package_images:
+  stage: package
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  script:
+    - echo "Logging into GitLab Container Registry..."
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+
+    - echo "Building Frontend Image..."
+    - docker build -f frontend/Dockerfile.prod -t $IMAGE_FRONTEND:$CI_COMMIT_SHORT_SHA -t $IMAGE_FRONTEND:latest ./frontend
+    - docker push $IMAGE_FRONTEND:$CI_COMMIT_SHORT_SHA
+    - docker push $IMAGE_FRONTEND:latest
+
+    - echo "Building Backend Image..."
+    - docker build -f backend/Dockerfile.prod -t $IMAGE_BACKEND:$CI_COMMIT_SHORT_SHA -t $IMAGE_BACKEND:latest ./backend
+    - docker push $IMAGE_BACKEND:$CI_COMMIT_SHORT_SHA
+    - docker push $IMAGE_BACKEND:latest

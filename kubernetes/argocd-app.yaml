@@ -9,6 +9,8 @@ spec:
     repoURL: "https://github.com/An619/Elastiflix.git"
     targetRevision: HEAD
     path: kubernetes/application
+    directory:
+      recurse: true
   destination:
     server: "https://kubernetes.default.svc"
     namespace: elastiflix

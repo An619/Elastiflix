@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elastiflix
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://github.com/An619/Elastiflix.git"
+    targetRevision: HEAD
+    path: kubernetes/application
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: elastiflix
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

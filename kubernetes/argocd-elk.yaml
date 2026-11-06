@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elastic-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://github.com/An619/Elastiflix.git"
+    targetRevision: HEAD
+    path: kubernetes/elastic-stack
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: elastic-stack
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

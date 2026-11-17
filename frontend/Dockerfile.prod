@@ -6,7 +6,16 @@ COPY . .
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+
+# Switch to root to apply security updates
+USER root
+RUN apk update && apk upgrade --no-cache
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/build /usr/share/nginx/html
+
+# Switch back to the non-root nginx user for security
+USER nginx
+
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

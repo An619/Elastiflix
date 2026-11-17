@@ -1,5 +1,4 @@
-import { SearchProvider, Results, WithSearch } from "@elastic/react-search-ui";
-import { Paging } from "@elastic/react-search-ui-views";
+import { SearchProvider, WithSearch } from "@elastic/react-search-ui";
 import connector from '../services/SearchConnector'; // Import the shared connector
 
 import ComingSoon from '../assets/coming-soon.png'
@@ -9,7 +8,7 @@ function Recent() {
   const config = {
     apiConnector: connector, // Use the shared connector
     alwaysSearchOnInitialLoad: true,
-    initialState: { 
+    initialState: {
       sortList: [
         { direction: "desc", field: "release_date" }
       ],

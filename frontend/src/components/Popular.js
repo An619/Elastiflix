@@ -1,5 +1,4 @@
-import { SearchProvider, Results, WithSearch } from "@elastic/react-search-ui";
-import { Paging } from "@elastic/react-search-ui-views";
+import { SearchProvider, WithSearch } from "@elastic/react-search-ui";
 import connector from '../services/SearchConnector'; // Import the shared connector
 
 function Popular() {

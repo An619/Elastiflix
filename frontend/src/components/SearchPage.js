@@ -2,7 +2,7 @@ import {
   SearchProvider
 } from "@elastic/react-search-ui";
 import connector from "../services/SearchConnector";
-import { SearchBox, Sorting } from "@elastic/react-search-ui";
+import { SearchBox } from "@elastic/react-search-ui";
 import {
   EuiIcon,
 } from '@elastic/eui';
@@ -33,7 +33,7 @@ function SearchPage() {
     alwaysSearchOnInitialLoad: true,
 
     searchQuery: {
-      search_fields: {  
+      search_fields: {
         title: { weight: 2 },
         overview: {},
         plot: {}

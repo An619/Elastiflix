@@ -1,0 +1,45 @@
+apiVersion: v1
+data:
+  logs-template.json: "{\r\n  \"index_patterns\": [\"elastiflix-logs-*\"],\r\n  \"priority\":
+    200,\r\n  \"template\": {\r\n    \"settings\": {\r\n      \"number_of_shards\":
+    1,\r\n      \"number_of_replicas\": 0\r\n    },\r\n    \"mappings\": {\r\n      \"properties\":
+    {\r\n        \"@timestamp\":   { \"type\": \"date\" },\r\n        \"search_query\":
+    { \"type\": \"keyword\" },\r\n        \"search_type\":  { \"type\": \"keyword\"
+    },\r\n        \"http_method\":  { \"type\": \"keyword\" },\r\n        \"http_path\":
+    \   { \"type\": \"keyword\" },\r\n        \"http_status\":  { \"type\": \"integer\"
+    },\r\n        \"log_level\":    { \"type\": \"keyword\" },\r\n        \"duration_ms\":
+    \ { \"type\": \"float\" },\r\n        \"result_count\": { \"type\": \"integer\"
+    },\r\n        \"service\":      { \"type\": \"keyword\" },\r\n        \"message\":
+    \     { \"type\": \"text\" },\r\n        \"tags\":         { \"type\": \"keyword\"
+    }\r\n      }\r\n    }\r\n  }\r\n}\r\n"
+  movies-template.json: "{\r\n  \"index_patterns\": [\"elastiflix-movies\"],\r\n  \"priority\":
+    200,\r\n  \"template\": {\r\n    \"settings\": {\r\n      \"number_of_shards\":
+    1,\r\n      \"number_of_replicas\": 0,\r\n      \"refresh_interval\": \"5s\"\r\n
+    \   },\r\n    \"mappings\": {\r\n      \"properties\": {\r\n        \"id\":                   {
+    \"type\": \"keyword\" },\r\n        \"imdb_id\":              { \"type\": \"keyword\"
+    },\r\n        \"title\":                { \"type\": \"text\" },\r\n        \"original_title\":
+    \      { \"type\": \"text\" },\r\n        \"original_language\":    { \"type\":
+    \"keyword\" },\r\n        \"overview\":             { \"type\": \"text\" },\r\n
+    \       \"plot\":                 { \"type\": \"text\" },\r\n        \"tagline\":
+    \             { \"type\": \"keyword\" },\r\n        \"genres\":               {
+    \"type\": \"keyword\" },\r\n        \"cast\":                 { \"type\": \"keyword\"
+    },\r\n        \"spoken_languages\":     { \"type\": \"keyword\" },\r\n        \"production_companies\":
+    { \"type\": \"keyword\" },\r\n        \"production_countries\": { \"type\": \"keyword\"
+    },\r\n        \"status\":               { \"type\": \"keyword\" },\r\n        \"rating\":
+    \              { \"type\": \"keyword\" },\r\n        \"homepage\":             {
+    \"type\": \"keyword\" },\r\n        \"backdrop_path\":        { \"type\": \"keyword\"
+    },\r\n        \"poster_path\":          { \"type\": \"text\" },\r\n        \"release_date\":
+    \        { \"type\": \"date\", \"format\": \"yyyy-MM-dd\" },\r\n        \"runtime\":
+    \             { \"type\": \"integer\" },\r\n        \"vote_count\":           {
+    \"type\": \"integer\" },\r\n        \"vote_average\":         { \"type\": \"float\"
+    },\r\n        \"user_score\":           { \"type\": \"float\" },\r\n        \"popularity\":
+    \          { \"type\": \"float\" },\r\n        \"budget\":               { \"type\":
+    \"float\" },\r\n        \"revenue\":              { \"type\": \"float\" },\r\n
+    \       \"adult\":                { \"type\": \"boolean\" },\r\n        \"video\":
+    \               { \"type\": \"boolean\" },\r\n        \"keywords\":             {
+    \"type\": \"nested\" },\r\n        \"belongs_to_collection\":{ \"type\": \"nested\"
+    }\r\n      }\r\n    }\r\n  }\r\n}\r\n"
+kind: ConfigMap
+metadata:
+  name: logstash-templates
+  namespace: elastic-stack

@@ -1,0 +1,96 @@
+apiVersion: v1
+data:
+  logs.conf: "# ---------------------------------------------------------------------------\r\n#
+    Elastiflix application logs:  Filebeat -> Logstash -> Elasticsearch\r\n#\r\n#
+    Filebeat tails the container stdout and ships raw lines here. Logstash is\r\n#
+    what turns \"a line of text\" into \"a document you can aggregate on\".\r\n# ---------------------------------------------------------------------------\r\n\r\ninput
+    {\r\n  beats {\r\n    port => 5044\r\n  }\r\n}\r\n\r\nfilter {\r\n\r\n  # Our
+    backend emits one JSON object per line. Parse it into real fields.\r\n  # Anything
+    that isn't JSON (npm noise, nodemon banners) just stays as\r\n  # `message` and
+    gets tagged, rather than blowing up the pipeline.\r\n  if [message] =~ /^\\s*\\{/
+    {\r\n    json {\r\n      source        => \"message\"\r\n      target        =>
+    \"app\"\r\n      skip_on_invalid_json => true\r\n      add_tag       => [ \"json_parsed\"
+    ]\r\n    }\r\n  }\r\n\r\n  # Promote the fields we want to chart to the top level.\r\n
+    \ if [app] {\r\n    mutate {\r\n      rename => {\r\n        \"[app][method]\"
+    \     => \"http_method\"\r\n        \"[app][path]\"        => \"http_path\"\r\n
+    \       \"[app][status]\"      => \"http_status\"\r\n        \"[app][duration_ms]\"
+    => \"duration_ms\"\r\n        \"[app][query]\"       => \"search_query\"\r\n        \"[app][results]\"
+    \    => \"result_count\"\r\n        \"[app][level]\"       => \"log_level\"\r\n
+    \       \"[app][search_type]\" => \"search_type\"\r\n        \"[app][service]\"
+    \    => \"service\"\r\n      }\r\n    }\r\n\r\n    # Use the time the backend
+    wrote the line, not the time Filebeat happened\r\n    # to read it. Without this
+    every document is stamped seconds late and the\r\n    # latency panels lie.\r\n
+    \   date {\r\n      match  => [ \"[app][@timestamp]\", \"ISO8601\" ]\r\n      target
+    => \"@timestamp\"\r\n    }\r\n    mutate {\r\n      convert => {\r\n        \"http_status\"
+    \ => \"integer\"\r\n        \"duration_ms\"  => \"float\"\r\n        \"result_count\"
+    => \"integer\"\r\n      }\r\n    }\r\n  }\r\n\r\n  # A search that returned nothing
+    is a product signal worth being able to find.\r\n  if [result_count] == 0 and
+    [search_query] {\r\n    mutate { add_tag => [ \"zero_results\" ] }\r\n  }\r\n\r\n
+    \ # Slow requests, flagged at ingest so the dashboard doesn't have to compute
+    it.\r\n  if [duration_ms] and [duration_ms] > 500 {\r\n    mutate { add_tag =>
+    [ \"slow_request\" ] }\r\n  }\r\n\r\n  # Drop everything that isn't worth a mapped
+    field. Filebeat is generous:\r\n  # a single log line arrives carrying the container's
+    full Docker label set\r\n  # (including absolute host paths), the raw line twice
+    over, and inode-level\r\n  # file bookkeeping. Left alone that is 97 mapped fields
+    for ~20 useful ones,\r\n  # and Discover becomes unreadable on camera.\r\n  #\r\n
+    \ # `app` goes last -- by now every field worth charting has been promoted\r\n
+    \ # out of it by the rename above.\r\n  mutate {\r\n    remove_field => [\r\n
+    \     \"@version\", \"agent\", \"ecs\", \"input\", \"app\",\r\n      \"docker\",
+    \            # duplicate of [container], plus every compose label\r\n      \"event\",
+    \             # event.original is byte-for-byte [message]\r\n      \"[container][labels]\",\r\n
+    \     \"[container][image]\",\r\n      \"[log][file][device_id]\", \"[log][file][inode]\",
+    \"[log][file][fingerprint]\",\r\n      \"[log][offset]\",\r\n      \"[host][name]\"
+    \       # the container ID, already in [container][name]\r\n    ]\r\n  }\r\n}\r\n\r\noutput
+    {\r\n  elasticsearch {\r\n    hosts       => [ \"${ES_HOST}\" ]\r\n    index       =>
+    \"elastiflix-logs-%{+YYYY.MM.dd}\"\r\n\r\n    # Same trick as movies.conf, and
+    here it matters even more: search_query\r\n    # MUST be a keyword. Let dynamic
+    mapping make it `text` and the \"top search\r\n    # terms\" panel becomes impossible
+    -- you get \"Fielddata is disabled\".\r\n    manage_template    => true\r\n    template
+    \          => \"/usr/share/logstash/templates/logs-template.json\"\r\n    template_name
+    \     => \"elastiflix-logs\"\r\n    template_overwrite => true\r\n  }\r\n}\r\n"
+  movies.conf: "# ---------------------------------------------------------------------------\r\n#
+    Elastiflix movie catalog loader\r\n#\r\n# This replaces data-loader/index-data.py
+    with a declarative Logstash pipeline.\r\n# Same source file, same target index,
+    same result -- but every stage of the\r\n# ETL is visible instead of buried in
+    Python.\r\n#\r\n#   input  -> where the data comes from\r\n#   filter -> how we
+    clean, convert and ENRICH it\r\n#   output -> where it lands\r\n# ---------------------------------------------------------------------------\r\n\r\ninput
+    {\r\n  file {\r\n    path            => \"/data/movies.ndjson\"\r\n    start_position
+    \ => \"beginning\"\r\n    sincedb_path    => \"/dev/null\"   # always re-read:
+    we want a repeatable demo\r\n    codec           => json          # one JSON movie
+    per line\r\n    mode            => \"read\"\r\n    file_completed_action => \"log\"\r\n
+    \   file_completed_log_path => \"/tmp/movies-done.log\"\r\n  }\r\n}\r\n\r\nfilter
+    {\r\n\r\n  # --- 1. Drop the plumbing Logstash adds but Elasticsearch doesn't
+    need -----\r\n  mutate {\r\n    remove_field => [ \"@version\", \"event\", \"log\",
+    \"host\", \"path\" ]\r\n  }\r\n\r\n  # --- 2. Type coercion -----------------------------------------------------\r\n
+    \ # The source data has `id` as an integer, but the mapping wants a keyword.\r\n
+    \ mutate {\r\n    convert => { \"id\" => \"string\" }\r\n  }\r\n\r\n  # --- 3.
+    ENRICHMENT: derive the field the app needs but the data lacks ------\r\n  # The
+    Elastiflix UI renders a \"user_score\" range facet, but not one of the\r\n  #
+    6,959 source documents actually contains that field -- so the facet is\r\n  #
+    always empty. TMDB's vote_average is the same 0-10 scale, so we derive it\r\n
+    \ # here. This is the thing Logstash gives you that a dumb bulk load does not.\r\n
+    \ if [vote_average] {\r\n    ruby {\r\n      code => \"event.set('user_score',
+    event.get('vote_average').to_f)\"\r\n    }\r\n  }\r\n\r\n  # --- 4. Dates -------------------------------------------------------------\r\n
+    \ # Some records have an empty release_date. Remove it rather than let it fail\r\n
+    \ # the mapping, then use the real ones to drive @timestamp so Kibana can plot\r\n
+    \ # the catalog over time.\r\n  if [release_date] == \"\" {\r\n    mutate { remove_field
+    => [ \"release_date\" ] }\r\n  } else {\r\n    date {\r\n      match  => [ \"release_date\",
+    \"yyyy-MM-dd\" ]\r\n      target => \"@timestamp\"\r\n      tag_on_failure =>
+    [ \"_dateparsefailure\" ]\r\n    }\r\n  }\r\n\r\n  # --- 5. Quality gate ------------------------------------------------------\r\n
+    \ # A movie with no title is useless to a search app.\r\n  if ![title] or [title]
+    == \"\" {\r\n    drop { }\r\n  }\r\n}\r\n\r\noutput {\r\n  elasticsearch {\r\n
+    \   hosts       => [ \"${ES_HOST}\" ]\r\n    ssl_enabled => false\r\n    index
+    \      => \"elastiflix-movies\"\r\n    document_id => \"%{id}\"          # re-running
+    updates instead of duplicating\r\n    action      => \"index\"\r\n\r\n    # Logstash
+    installs the index template ITSELF, at startup, before a single\r\n    # document
+    is sent. That ordering is the whole point: without a mapping in\r\n    # place
+    first, Elasticsearch guesses -- release_date becomes a string and\r\n    # genres
+    becomes unaggregatable, and you cannot fix either without a reindex.\r\n    manage_template
+    \   => true\r\n    template           => \"/usr/share/logstash/templates/movies-template.json\"\r\n
+    \   template_name      => \"elastiflix-movies\"\r\n    template_overwrite => true\r\n
+    \ }\r\n\r\n  # Uncomment on camera to watch documents flow through the pipeline
+    live.\r\n  # stdout { codec => rubydebug }\r\n}\r\n"
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: elastic-stack

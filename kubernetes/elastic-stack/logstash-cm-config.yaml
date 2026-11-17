@@ -1,0 +1,17 @@
+apiVersion: v1
+data:
+  logstash.yml: "# Logstash 8+ renamed http.* to api.* -- using the old name is a
+    fatal\r\n# startup error, not a warning.\r\napi.http.host: \"0.0.0.0\"\r\n\r\nlog.level:
+    info\r\n\r\n# start-local / this demo runs a basic-licence cluster, so no X-Pack
+    monitoring.\r\nxpack.monitoring.enabled: false\r\n"
+  pipelines.yml: "# Two separate pipelines in one Logstash instance.\r\n#\r\n# GOTCHA
+    worth calling out on camera: if you just point path.config at a\r\n# directory,
+    Logstash CONCATENATES every .conf file into one pipeline -- so\r\n# your movie
+    loader and your log receiver would end up wired into each other.\r\n# pipelines.yml
+    keeps them properly isolated.\r\n\r\n- pipeline.id: movies\r\n  path.config: \"/usr/share/logstash/pipeline/movies.conf\"\r\n
+    \ pipeline.workers: 2\r\n\r\n- pipeline.id: applogs\r\n  path.config: \"/usr/share/logstash/pipeline/logs.conf\"\r\n
+    \ pipeline.workers: 1\r\n"
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: elastic-stack

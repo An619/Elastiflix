@@ -1,10 +1,16 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: frontend
   namespace: elastiflix
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    canary:
+      steps:
+        - setWeight: 20
+        - pause: { duration: 30s } # Wait 30 seconds before full rollout
+        - setWeight: 100
   selector:
     matchLabels:
       app: frontend

@@ -29,3 +29,53 @@ module "bastion" {
   cluster_name = var.cluster_name
   environment  = var.environment
 }
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "20.8.4" # Pinned version
+
+  cluster_name    = "${var.cluster_name}-eks"
+  cluster_version = "1.30"
+
+  # Networking
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.private_subnets
+  control_plane_subnet_ids = module.vpc.private_subnets
+
+  # Allow your laptop to connect to the EKS API
+  cluster_endpoint_public_access = true
+
+  # Enable IAM roles for service accounts (IRSA)
+  enable_irsa = true
+
+  # EKS Managed Node Group(s)
+  eks_managed_node_groups = {
+    main = {
+      name           = "main-node-group"
+      instance_types = ["t3.medium"] # 2 vCPU, 4GB RAM
+      min_size       = 1
+      max_size       = 3
+      desired_size   = 2
+
+      # We use the Bastion/SSM to access nodes, so no SSH key needed
+      key_name = null
+    }
+  }
+
+  # Allow the nodes to access ECR and other AWS services
+  node_security_group_additional_rules = {
+    ingress_self_all = {
+      description = "Node to node all ports/protocols"
+      protocol    = "-1"
+      from_port   = 0
+      to_port     = 0
+      type        = "ingress"
+      self        = true
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Terraform   = "true"
+  }
+}

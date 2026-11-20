@@ -1,0 +1,26 @@
+name: Code Tests
+on: workflow_call
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Setup Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: "22"
+                  cache: "npm"
+                  cache-dependency-path: |
+                      frontend/package-lock.json
+                      backend/package-lock.json
+            - name: Build Frontend
+              run: |
+                  cd frontend
+                  npm ci --legacy-peer-deps
+                  npm run build
+            - name: Test Backend
+              run: |
+                  cd backend
+                  npm ci
+                  npm test --if-present

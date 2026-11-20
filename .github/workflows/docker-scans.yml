@@ -1,0 +1,40 @@
+name: Docker and IaC Scans
+on: workflow_call
+
+jobs:
+    trivy-image-scan:
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                service: [frontend, backend]
+        steps:
+            - uses: actions/checkout@v5
+
+            - name: Build ${{ matrix.service }} Image
+              uses: docker/build-push-action@v6
+              with:
+                  context: ./${{ matrix.service }}
+                  file: ./${{ matrix.service }}/Dockerfile.prod
+                  push: false
+                  load: true
+                  tags: an619/elastiflix-${{ matrix.service }}:latest
+
+            - name: Scan ${{ matrix.service }} Image
+              uses: aquasecurity/trivy-action@0.35.0
+              with:
+                  image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
+                  format: "table"
+                  exit-code: "1"
+                  ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+
+    checkov-terraform-scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Checkov IaC Scan
+              uses: bridgecrewio/checkov-action@master
+              with:
+                  directory: terraform/
+                  framework: terraform
+                  soft_fail: true

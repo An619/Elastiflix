@@ -1,0 +1,16 @@
+name: Dependency Checks
+on: workflow_call
+
+jobs:
+    npm-audit:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Setup Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: "22"
+            - name: Audit Backend
+              run: |
+                  cd backend
+                  npm audit --audit-level=high || true

@@ -1,0 +1,39 @@
+name: Enterprise DevSecOps Pipeline
+
+on:
+    push:
+        branches: [main]
+
+jobs:
+    code-tests:
+        uses: ./.github/workflows/code-tests.yml
+
+    secret-scanning:
+        uses: ./.github/workflows/secret-scanning.yml
+
+    dependency-checks:
+        uses: ./.github/workflows/dependency-scan.yml
+
+    code-quality:
+        uses: ./.github/workflows/code-quality.yml
+
+    sonar-qube:
+        uses: ./.github/workflows/sonar-scan.yml
+        secrets: inherit
+
+    docker-checks:
+        uses: ./.github/workflows/docker-scans.yml
+        secrets: inherit
+
+    docker-push:
+        needs:
+            [
+                code-tests,
+                secret-scanning,
+                dependency-checks,
+                code-quality,
+                sonar-qube,
+                docker-checks,
+            ]
+        uses: ./.github/workflows/docker-push.yml
+        secrets: inherit

@@ -16,9 +16,3 @@ variable "environment" {
   type        = string
   default     = "dev" # dev uses single NAT, production creates 3
 }
-
-variable "bastion_instance_type" {
-  description = "EC2 instance type for the bastion host"
-  type        = string
-  default     = "t4g.nano" # ARM-based, very cheap
-}

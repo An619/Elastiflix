@@ -1,11 +1,14 @@
 #!/bin/bash
 
+# Exit immediately if a command exits with a non-zero status
+set -e
+
 echo "🚀 1. Starting Minikube..."
 minikube start --cpus=4 --memory=7500 --disk-size=30g
 minikube addons enable ingress
 
-echo "🐳 2. Loading Docker images into Minikube (Fixing ImagePullBackOff)..."
-# We load the images locally so K8s doesn't have to pull from Docker Hub
+echo "🐳 2. Loading Docker images into Minikube..."
+# Load local images to avoid Docker Hub rate limits and errors
 minikube image load an619/elastiflix-frontend:latest || true
 minikube image load an619/elastiflix-backend:latest || true
 minikube image load an619/elastiflix-frontend:v0.1.0 || true
@@ -30,7 +33,12 @@ echo "🚀 6. Installing Argo Rollouts..."
 kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply --server-side --force-conflicts -n argo-rollouts -f https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml
 
-echo "🔄 7. Deploying Argo CD Applications (App of Apps)..."
+echo "🦅 7. Installing Falco (Runtime Security)..."
+helm repo add falcosecurity https://falcosecurity.github.io/charts
+helm repo update
+helm upgrade --install falco falcosecurity/falco -n falco --create-namespace --set driver.kind=modern_ebpf --set tty=true --wait
+
+echo "🔄 8. Deploying Argo CD Applications (GitOps)..."
 kubectl apply -f kubernetes/argocd-app.yaml
 kubectl apply -f kubernetes/argocd-infra.yaml
 kubectl apply -f kubernetes/argocd-elk.yaml
@@ -39,8 +47,8 @@ kubectl apply -f kubernetes/argocd-ingress.yaml
 kubectl apply -f kubernetes/monitoring-ingress.yaml
 
 echo ""
-echo "✅ BOOTSTRAP COMPLETE! Everything is deployed via GitOps."
-echo "⚠️  IMPORTANT: You must run these commands in an Administrator PowerShell:"
+echo "✅ BOOTSTRAP COMPLETE! Your local cluster is fully restored via GitOps."
+echo "⚠️  IMPORTANT: Open an Administrator PowerShell and run these commands:"
 echo "   net stop was /y"
 echo "   minikube tunnel"
 echo ""

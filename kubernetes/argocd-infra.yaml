@@ -8,9 +8,7 @@ spec:
   source:
     repoURL: "https://github.com/An619/Elastiflix.git"
     targetRevision: HEAD
-    path: kubernetes
-    directory:
-      include: "infra.yaml"
+    path: kubernetes/infra
   destination:
     server: "https://kubernetes.default.svc"
     namespace: infra

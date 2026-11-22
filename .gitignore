@@ -13,3 +13,4 @@ terraform/.terraform/
 terraform/*.tfstate
 kubeseal.exe
 my-public-key.pem
+credentials-velero

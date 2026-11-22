@@ -11,3 +11,5 @@ terraform/*.tfstate.backup
 *.pem
 terraform/.terraform/
 terraform/*.tfstate
+kubeseal.exe
+my-public-key.pem

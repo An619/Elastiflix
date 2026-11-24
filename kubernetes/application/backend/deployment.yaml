@@ -4,7 +4,7 @@ metadata:
   name: backend
   namespace: elastiflix
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: backend
@@ -22,3 +22,21 @@ spec:
           envFrom:
             - configMapRef:
                 name: app-config
+            - secretRef:
+                name: backend-secret # To be created in AWS via ESO
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 17700
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 17700
+            initialDelaySeconds: 20
+            periodSeconds: 10

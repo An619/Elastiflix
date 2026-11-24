@@ -1,0 +1,26 @@
+- name: Bootstrap EKS Cluster
+  hosts: localhost
+  tasks:
+    - name: Add Helm Repos
+      command: "helm repo add {{ item.name }} {{ item.url }}"
+      loop:
+        - { name: "argo", url: "https://argoproj.github.io/argo-helm" }
+        - {
+            name: "external-secrets",
+            url: "https://charts.external-secrets.io",
+          }
+        - { name: "eks", url: "https://aws.github.io/eks-charts" }
+
+    - name: Install Argo CD
+      command: helm upgrade --install argocd argo/argo-cd --namespace argocd --create-namespace
+
+    - name: Install External Secrets Operator
+      command: helm upgrade --install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace
+
+    - name: Install AWS Load Balancer Controller
+      command: >
+        helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller
+        --namespace kube-system
+        --set clusterName=elastiflix-eks
+        --set serviceAccount.create=false
+        --set serviceAccount.name=aws-load-balancer-controller

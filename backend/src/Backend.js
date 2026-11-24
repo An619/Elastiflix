@@ -37,12 +37,13 @@ async function connectRabbitMQ() {
     log.error({ event: "rabbitmq_fail", error: err.message });
   }
 }
-connectRabbitMQ();
+// AWAIT the connection before starting the app
+await connectRabbitMQ();
 
 // --- CACHING WRAPPER ---
 const cachedSearch = async (req, res, next) => {
   const { searchTerm } = req.body.state || {};
-  if (!searchTerm) return next(); // Only cache if there is a search term
+  if (!searchTerm) return next();
 
   const cacheKey = `search:${searchTerm}`;
   try {
@@ -55,7 +56,6 @@ const cachedSearch = async (req, res, next) => {
     log.error({ event: "cache_error", error: err.message });
   }
 
-  // Intercept res.json to save the result to cache and send to RabbitMQ
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     if (body && body.results) {
@@ -86,10 +86,24 @@ app.post("/api/autocomplete", async (req, res) => {
   }
 });
 
+// --- HEALTH CHECK FOR KUBERNETES ---
+app.get("/healthz", (req, res) => {
+  res.status(200).send("OK");
+});
+
 app.get("/", (req, res) => {
   res.send("Hello from the backend!");
 });
 
-app.listen(17700, () => {
+const server = app.listen(17700, () => {
   log.info({ event: "startup", port: 17700, index: process.env.ES_INDEX });
+});
+
+// --- GRACEFUL SHUTDOWN ---
+process.on("SIGTERM", () => {
+  log.info({ event: "sigterm_received", message: "Shutting down gracefully" });
+  server.close(() => {
+    redisClient.quit();
+    process.exit(0);
+  });
 });

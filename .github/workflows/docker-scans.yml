@@ -89,9 +89,13 @@ jobs:
               uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
             - name: Resolve candidate Kubernetes image digests (read-only)
               run: |
+                  # PRs resolve the main-branch base SHA (the image already
+                  # published for the target revision); main pushes resolve
+                  # their own SHA. Avoid validating manifests against stale image tags.
+                  app_image_sha="${{ github.event.pull_request.base.sha || github.sha }}"
                   images=(
-                    an619/elastiflix-backend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
-                    an619/elastiflix-frontend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
+                    "an619/elastiflix-backend:${app_image_sha}"
+                    "an619/elastiflix-frontend:${app_image_sha}"
                     docker.elastic.co/elasticsearch/elasticsearch:9.1.0
                     docker.elastic.co/kibana/kibana:9.1.0
                     docker.elastic.co/logstash/logstash:9.1.0

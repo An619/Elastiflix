@@ -26,6 +26,13 @@ jobs:
                   cd backend
                   npm ci
                   npm run test:coverage
+            - name: Generate Python Coverage
+              run: |
+                  cd data-loader
+                  python3 -m pip install --upgrade pip
+                  pip install coverage
+                  coverage run --include="index-data.py" test_index_data.py
+                  coverage xml -o coverage-python.xml
             - name: SonarCloud Scan
               uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
               env:

@@ -19,3 +19,7 @@ build/
 __pycache__/
 *.pyc
 coverage/
+
+# Local Python coverage artifacts
+data-loader/coverage-python.xml
+.coverage

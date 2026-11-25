@@ -247,3 +247,6 @@ async function shutdown(signal) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Exported for unit tests (pure helpers, no side effects).
+export { redisUrl, rabbitmqUrl };

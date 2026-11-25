@@ -8,7 +8,7 @@ COPY . .
 ENV REACT_APP_ES_API=/api
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
 
 # Switch to root to apply security updates
 USER root

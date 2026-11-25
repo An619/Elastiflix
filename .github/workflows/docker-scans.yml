@@ -89,13 +89,28 @@ jobs:
               uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
             - name: Resolve candidate Kubernetes image digests (read-only)
               run: |
-                  # PRs resolve the main-branch base SHA (the image already
-                  # published for the target revision); main pushes resolve
-                  # their own SHA. Avoid validating manifests against stale image tags.
-                  app_image_sha="${{ github.event.pull_request.base.sha || github.sha }}"
+                  # Read the application image refs directly from the manifests:
+                  # main's new images are not published until this job has passed.
+                  mapfile -t app_images < <(.venv/bin/python - <<'PY'
+                  import re
+                  from pathlib import Path
+                  import yaml
+
+                  workloads = {
+                      "kubernetes/application/backend/deployment.yaml": "backend",
+                      "kubernetes/application/frontend/deployment.yaml": "frontend",
+                  }
+                  for manifest, name in workloads.items():
+                      document = yaml.safe_load(Path(manifest).read_text(encoding="utf-8"))
+                      containers = document["spec"]["template"]["spec"]["containers"]
+                      image = next(container["image"] for container in containers if container["name"] == name)
+                      if not re.fullmatch(r"[^@]+@sha256:[a-f0-9]{64}", image):
+                          raise SystemExit(f"{manifest}: application image must be digest-pinned")
+                      print(image)
+                  PY
+                  )
                   images=(
-                    "an619/elastiflix-backend:${app_image_sha}"
-                    "an619/elastiflix-frontend:${app_image_sha}"
+                    "${app_images[@]}"
                     docker.elastic.co/elasticsearch/elasticsearch:9.1.0
                     docker.elastic.co/kibana/kibana:9.1.0
                     docker.elastic.co/logstash/logstash:9.1.0
@@ -106,12 +121,22 @@ jobs:
                   )
                   summary_file="$(mktemp)"
                   for image in "${images[@]}"; do
-                    digest="$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')"
+                    expected_digest=""
+                    image_tag="$image"
+                    if [[ "$image" == *@* ]]; then
+                      image_tag="${image%@*}"
+                      expected_digest="${image##*@}"
+                    fi
+                    digest="$(docker buildx imagetools inspect "$image_tag" | awk '$1 == "Digest:" { print $2; exit }')"
                     if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-                      echo "Unable to resolve an OCI digest for $image" >&2
+                      echo "Unable to resolve an OCI digest for $image_tag" >&2
                       exit 1
                     fi
-                    reference="${image%:*}@${digest}"
+                    if [[ -n "$expected_digest" && "$digest" != "$expected_digest" ]]; then
+                      echo "Manifest digest does not match the published tag for $image_tag: expected $expected_digest, got $digest" >&2
+                      exit 1
+                    fi
+                    reference="${image_tag%:*}@${digest}"
                     printf '%s\n' "- \`$reference\`" >> "$summary_file"
                     echo "::notice title=Resolved immutable image::$reference"
                   done

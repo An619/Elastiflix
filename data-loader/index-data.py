@@ -38,6 +38,8 @@ def main():
         print(f"Deleted existing index {args.index_name}")
 
     print(f"Reading template from {args.template_path}")
+    # NOSONAR - template path is supplied by the operator running the CLI
+    # (passing it is the point of the tool); no untrusted input reaches open().
     with open(args.template_path, 'r', encoding='utf-8') as f:
         template = json.load(f)
 

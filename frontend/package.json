@@ -5,9 +5,9 @@
   "dependencies": {
     "@elastic/datemath": "^5.0.3",
     "@elastic/eui": "98.2.1",
-    "@elastic/react-search-ui": "1.24.1",
+    "@elastic/react-search-ui": "1.24.2",
     "@elastic/react-search-ui-views": "^1.24.1",
-    "@elastic/search-ui-elasticsearch-connector": "1.24.1",
+    "@elastic/search-ui-elasticsearch-connector": "1.24.2",
     "@emotion/css": "^11.13.5",
     "@emotion/react": "^11.14.0",
     "humanize-string": "^3.0.0",
@@ -22,7 +22,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "react-scripts": "5.0.1",
-    "sass": "^1.39.0"
+    "sass": "^1.108.2"
   },
   "scripts": {
     "start": "react-scripts start",

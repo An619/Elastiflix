@@ -1,0 +1,9 @@
+# Everything is owned by the project maintainer.
+# Replace with real teams/individuals as the org grows.
+*                   @An619
+
+# Security-critical paths — require explicit review
+/.github/workflows/ @An619
+/terraform/         @An619
+/kubernetes/        @An619
+/.github/           @An619

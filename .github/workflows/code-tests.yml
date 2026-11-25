@@ -34,10 +34,15 @@ jobs:
                   terraform_version: 1.9.8
             - name: Terraform Validate
               run: |
-                  terraform fmt -recursive terraform/
+                  terraform fmt -check -recursive terraform/
                   terraform -chdir=terraform init -backend=false
                   terraform -chdir=terraform validate
             - name: Validate Kubernetes Manifests
               run: |
-                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
-                  /tmp/kubeconform -strict -summary kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/ || true
+                  curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
+                  # Unknown custom-resource schemas (e.g. Argo Rollouts / ESO) are
+                  # explicitly reported as skipped; built-in Kubernetes schemas
+                  # remain strict and any validation error fails this job.
+                  /tmp/kubeconform -strict -ignore-missing-schemas -summary \
+                    kubernetes/application/ kubernetes/infra/ \
+                    kubernetes/elastic-stack/ kubernetes/aws/

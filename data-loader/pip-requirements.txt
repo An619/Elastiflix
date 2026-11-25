@@ -2,5 +2,5 @@
 # inference.put / semantic_text / retriever APIs this script calls -- the
 # loader could not run as published. Bumped to a 9.x client, and added tqdm,
 # which the script imports but upstream never declared.
-elasticsearch==9.1.0
+elasticsearch==9.5.1
 tqdm==4.67.1

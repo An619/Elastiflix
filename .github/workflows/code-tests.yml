@@ -14,13 +14,26 @@ jobs:
                   cache-dependency-path: |
                       frontend/package-lock.json
                       backend/package-lock.json
-            - name: Build Frontend
+            - name: Test Frontend
               run: |
                   cd frontend
                   npm ci --legacy-peer-deps
+                  CI=true npm test -- --watchAll=false
+            - name: Build Frontend
+              run: |
+                  cd frontend
                   npm run build
             - name: Test Backend
               run: |
                   cd backend
                   npm ci
-                  npm test --if-present
+                  npm test
+            - name: Terraform Validate
+              run: |
+                  terraform fmt -check -recursive terraform/
+                  terraform -chdir=terraform init -backend=false
+                  terraform -chdir=terraform validate
+            - name: Validate Kubernetes Manifests
+              run: |
+                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform
+                  /tmp/kubeconform -strict -summary kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/ || true

@@ -13,13 +13,8 @@ spec:
   rules:
     - http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
+          # /api MUST come before / — ALB evaluates rules in order and
+          # Prefix "/" would otherwise match every request, shadowing /api.
           - path: /api
             pathType: Prefix
             backend:
@@ -27,3 +22,10 @@ spec:
                 name: backend
                 port:
                   number: 17700
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

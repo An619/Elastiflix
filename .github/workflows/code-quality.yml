@@ -14,3 +14,11 @@ jobs:
               uses: hadolint/hadolint-action@v3.1.0
               with:
                   dockerfile: backend/Dockerfile.prod
+            - name: Lint Frontend Dev Dockerfile
+              uses: hadolint/hadolint-action@v3.1.0
+              with:
+                  dockerfile: frontend/Dockerfile
+            - name: Lint Backend Dev Dockerfile
+              uses: hadolint/hadolint-action@v3.1.0
+              with:
+                  dockerfile: backend/Dockerfile

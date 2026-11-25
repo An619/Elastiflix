@@ -33,8 +33,14 @@ jobs:
         steps:
             - uses: actions/checkout@v5
             - name: Checkov IaC Scan
-              uses: bridgecrewio/checkov-action@master
+              uses: bridgecrewio/checkov-action@v12.1347.0
               with:
                   directory: terraform/
                   framework: terraform
-                  soft_fail: true
+                  soft_fail: false
+            - name: Checkov Kubernetes Scan
+              uses: bridgecrewio/checkov-action@v12.1347.0
+              with:
+                  directory: kubernetes/
+                  framework: kubernetes
+                  soft_fail: false

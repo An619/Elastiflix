@@ -1,11 +1,11 @@
-FROM node:23-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --force
+RUN npm ci --legacy-peer-deps
 
 RUN npx update-browserslist-db@latest
 

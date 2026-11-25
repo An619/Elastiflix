@@ -38,6 +38,28 @@ helm repo add falcosecurity https://falcosecurity.github.io/charts
 helm repo update
 helm upgrade --install falco falcosecurity/falco -n falco --create-namespace --set driver.kind=modern_ebpf --set tty=true --wait
 
+echo "🔐 7b. Installing SealedSecrets controller..."
+kubectl create namespace kube-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/controller.yaml
+
+echo "🔑 7c. Creating local Secrets for Minikube (no ESO / AWS on this cluster)..."
+# SealedSecrets ciphertexts in kubernetes/infra/*-sealedsecret.yaml were
+# sealed against a different cluster's key and cannot decrypt here, so
+# create plain Secrets locally. Override via env vars if needed:
+#   REDIS_PASSWORD=... RABBITMQ_PASSWORD=... ./bootstrap.sh
+kubectl create namespace infra --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace elastiflix --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic redis-secret -n infra \
+  --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic rabbitmq-secret -n infra \
+  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic backend-secret -n elastiflix \
+  --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
+  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 echo "🔄 8. Deploying Argo CD Applications (GitOps)..."
 kubectl apply -f kubernetes/argocd-app.yaml
 kubectl apply -f kubernetes/argocd-infra.yaml

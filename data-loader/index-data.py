@@ -8,6 +8,17 @@ from tqdm import tqdm
 
 def actions_generator(movies_json, index_name):
     for movie in movies_json:
+        # The UI facet is `user_score`, but the source data only has
+        # TMDB `vote_average` (same 0-10 scale). Derive it here so the
+        # facet is not empty when this loader is used.
+        if "user_score" not in movie and movie.get("vote_average") is not None:
+            try:
+                movie["user_score"] = float(movie["vote_average"])
+            except (TypeError, ValueError):
+                pass
+        # Mapping expects `id` as keyword; source has integers.
+        if movie.get("id") is not None:
+            movie["id"] = str(movie["id"])
         movie["_index"] = index_name
         movie["_id"] = movie['id']
         yield movie
@@ -29,7 +40,7 @@ def main():
     print(f"Reading template from {args.template_path}")
     with open(args.template_path, 'r') as f:
         template = json.load(f)
-    
+
     # Extract just the mappings part from the template
     mappings = template['template']['mappings']
 

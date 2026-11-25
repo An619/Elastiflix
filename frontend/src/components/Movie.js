@@ -50,64 +50,65 @@ function Movie() {
         trackUrlState: false
     };
 
-    
-
     return (
         <SearchProvider config={config}>
-            
+
             <Nav showSearch={true} fixed={true} />
             <WithSearch mapContextToProps={({ results }) => ({ results })}>
-                
+
                 {({ results }) => {
-                    
+
                     if (!results || results.length === 0) return <div>Movie not found.</div>;
 
                     // Get the first result only
                     const movie = results[0];
-                    const poster = movie.backdrop_path.raw
-                        ? `https://image.tmdb.org/t/p/original/${movie.backdrop_path.raw}`
-                        : null;
+                    const raw = (field) => movie[field]?.raw ?? null;
 
-                    return(
-            
-                        <div className="movie" style={{
-                            backgroundImage: `url(${poster})`,
-                          }}>
-                            
+                    const backdrop = raw("backdrop_path");
+                    const posterStyle = backdrop
+                        ? { backgroundImage: `url(https://image.tmdb.org/t/p/original/${backdrop})` }
+                        : {};
+                    const title = raw("title") ?? "Untitled";
+                    const overview = raw("overview") ?? "";
+                    const releaseDate = raw("release_date");
+                    const cast = raw("cast") ?? [];
+                    const plot = raw("plot");
+
+                    return (
+                        <div className="movie" style={posterStyle}>
+
                             <div className="container">
                                 <div className="left">
-                                    <h1 className="title">{results[0].title.raw}</h1>
-                                    <p className="overview">{results[0].overview.raw}</p>
+                                    <h1 className="title">{title}</h1>
+                                    <p className="overview">{overview}</p>
 
-                                    <h3>Release</h3>
-                                    <p>{results[0].release_date.raw}</p>
+                                    {releaseDate && <>
+                                        <h3>Release</h3>
+                                        <p>{releaseDate}</p>
+                                    </>}
 
-                                    <h3>Cast</h3>
-                                    {results[0].cast.raw.slice(0, 10).map((number) => (
-                                        <p key={number}>{number}</p>
-                                    ))}
-    
-                                      
+                                    {cast.length > 0 && <>
+                                        <h3>Cast</h3>
+                                        {cast.slice(0, 10).map((name) => (
+                                            <p key={name}>{name}</p>
+                                        ))}
+                                    </>}
+
                                 </div>
                                 <div className="right">
-                                {results[0]?.hasOwnProperty("plot") && 
-                                    ( 
+                                    {plot &&
                                         <div className="plot">
                                             <h3>Plot</h3>
-                                            <p className="plot_text">{results[0].plot.raw}</p>
-                                        </div> 
-                                    )} 
-
-                                    
-
-    
+                                            <p className="plot_text">{plot}</p>
+                                        </div>
+                                    }
                                 </div>
-                                
+
                             </div>
 
                         </div>
 
-                    ) 
+                    )
                 }}
 
             </WithSearch>

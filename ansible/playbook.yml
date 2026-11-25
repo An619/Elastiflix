@@ -17,6 +17,24 @@
     - name: Install External Secrets Operator
       command: helm upgrade --install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace
 
+    # The ALB controller is installed with serviceAccount.create=false so
+    # it uses the IRSA-annotated ServiceAccount created below (role
+    # provisioned by terraform/alb.tf). Without this SA the controller
+    # pods crash-loop with "serviceaccount not found".
+    - name: Create ALB controller ServiceAccount (IRSA)
+      command: >-
+        kubectl create serviceaccount aws-load-balancer-controller
+        --namespace kube-system
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Annotate ALB ServiceAccount with IRSA role
+      command: >-
+        kubectl annotate serviceaccount aws-load-balancer-controller
+        --namespace kube-system
+        eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') }}:role/elastiflix-alb-role
+        --overwrite
+      when: lookup('env', 'AWS_ACCOUNT_ID') is defined and lookup('env', 'AWS_ACCOUNT_ID') != ''
+
     - name: Install AWS Load Balancer Controller
       command: >
         helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller

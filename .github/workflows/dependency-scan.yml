@@ -13,4 +13,12 @@ jobs:
             - name: Audit Backend
               run: |
                   cd backend
-                  npm audit --audit-level=high || true
+                  npm audit --audit-level=high
+            - name: Audit Frontend
+              run: |
+                  cd frontend
+                  npm audit --audit-level=high
+            - name: Audit Python Dependencies
+              run: |
+                  pip install pip-audit
+                  pip-audit -r data-loader/pip-requirements.txt

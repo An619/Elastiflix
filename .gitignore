@@ -9,8 +9,12 @@ terraform/.terraform.lock.hcl
 terraform/*.tfstate
 terraform/*.tfstate.backup
 *.pem
-terraform/.terraform/
-terraform/*.tfstate
 kubeseal.exe
 my-public-key.pem
 credentials-velero
+
+# Build output
+frontend/build/
+build/
+__pycache__/
+*.pyc

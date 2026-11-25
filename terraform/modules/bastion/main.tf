@@ -19,6 +19,16 @@ resource "aws_security_group" "bastion" {
   vpc_id      = var.vpc_id
 
   # Checkov Fix: Restricted egress and added description
+  # TCP/80 is required: Ubuntu APT mirrors are HTTP-only, so without it
+  # user_data `apt-get update` hangs and the instance never bootstraps.
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP outbound for APT mirrors"
+  }
+
   egress {
     from_port   = 443
     to_port     = 443
@@ -63,6 +73,11 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
 
+  # The bastion lives in a public subnet (see terraform/main.tf) but the
+  # VPC module does not set map_public_ip_on_launch, so without this the
+  # instance gets no public IP and SSM Session Manager cannot reach it.
+  associate_public_ip_address = true
+
   # Checkov Fixes:
   monitoring    = true
   ebs_optimized = true
@@ -77,14 +92,13 @@ resource "aws_instance" "bastion" {
     encrypted   = true
   }
 
+  # Ubuntu 22.04 AMIs already ship amazon-ssm-agent, so no manual install
+  # is needed. Keep user_data minimal: just ensure the agent is running.
   user_data = <<-EOF
               #!/bin/bash
               sudo apt-get update -y
-              sudo apt-get install -y wget
-              wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_arm64/amazon-ssm-agent.deb
-              sudo dpkg -i amazon-ssm-agent.deb
-              sudo systemctl enable amazon-ssm-agent
-              sudo systemctl start amazon-ssm-agent
+              sudo systemctl enable amazon-ssm-agent || true
+              sudo systemctl start amazon-ssm-agent || true
               EOF
 
   tags = {

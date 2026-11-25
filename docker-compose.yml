@@ -144,6 +144,41 @@ services:
       # Needs Kibana up because it loads ~112 prebuilt dashboards on first run.
       kibana: { condition: service_healthy }
 
+  # ── APP INFRA: cache + queue (backend degrades gracefully without them,
+  # but without these services every request logs redis_error spam) ──────
+
+  redis:
+    image: redis:7-alpine
+    container_name: elastiflix-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: elastiflix-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-user}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   # ── THE APP ──────────────────────────────────────────────────────────────
 
   backend:
@@ -160,12 +195,16 @@ services:
       - ES_HOST=http://elasticsearch:9200
       - ES_INDEX=elastiflix-movies
       - ES_API_KEY=
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}@rabbitmq:5672
     ports:
       - "17700:17700"
     volumes:
       - ./backend/src:/app/src
     depends_on:
       elasticsearch: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
 
   frontend:
     build: ./frontend
@@ -188,3 +227,5 @@ volumes:
   esdata:
   filebeatdata:
   metricbeatdata:
+  redisdata:
+  rabbitmqdata:

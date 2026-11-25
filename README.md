@@ -104,7 +104,7 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 | Dockerfile lint | **Hadolint** (prod & dev Dockerfiles) | PR + main | build fails |
 | SAST | **SonarCloud** — Quality Gate: 0 new issues, **≥ 80% coverage on new code**, 0% duplication | PR + main | build fails |
 | Image / filesystem scan | **Trivy** — blocks fixable CRITICAL/HIGH findings; reports all CRITICAL/HIGH findings, including unfixed | PR + main | build fails |
-| IaC scan | **Checkov** — Terraform and Kubernetes **hard gates**; one time-bound compatibility exception is documented in `docs/security/phase-2-kubernetes-hardening.md` | PR + main | fails |
+| IaC scan | **Checkov** — Terraform and Kubernetes **hard gates**; Kubernetes currently has no skipped checks | PR + main | fails |
 | Action hygiene | **SHA-pinned actions**, minimal `permissions:`, `docker-push` main-only | always | — |
 
 ### 📊 Observability

@@ -3,8 +3,6 @@ kind: Deployment
 metadata:
   name: backend
   namespace: elastiflix
-  annotations:
-    checkov.io/skip: "CKV_K8S_35=Temporary image-contract compatibility: this pinned image predates Secret-file support; owner @An619, expire 2027-02-22, track in docs/security/phase-2-kubernetes-hardening.md and remove after rebuilding and promoting the backend image."
 spec:
   replicas: 2
   selector:
@@ -24,31 +22,18 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          image: an619/elastiflix-backend:09fe45ac8fabf3242b95f88a79c651bd161b4e29@sha256:06835ad91515135b867e0b180b2f67ac3ba018765790be867c33dfeb4faf0b74
+          image: an619/elastiflix-backend:2e6b726fa47344510ed5d5c3d97fb0da28d6372b@sha256:1864ff44766c5340a55b1e5c894445b00b1ace5d1fdc7a08bc6b2cac2206319a
           imagePullPolicy: Always
           ports:
             - containerPort: 17700
           envFrom:
             - configMapRef:
                 name: app-config
-            - secretRef:
-                name: backend-secret
-                optional: true
-          # Retain the existing image contract until the phase 2 backend image
-          # with Secret-file support is built and promoted by its digest.
           env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: redis-password
-                  optional: true
-            - name: RABBITMQ_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: rabbitmq-password
-                  optional: true
+            - name: REDIS_PASSWORD_FILE
+              value: /run/secrets/elastiflix/redis-password
+            - name: RABBITMQ_PASSWORD_FILE
+              value: /run/secrets/elastiflix/rabbitmq-password
           resources:
             requests:
               cpu: "100m"
@@ -64,6 +49,10 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: backend-secrets
+              mountPath: /run/secrets/elastiflix
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
@@ -76,3 +65,13 @@ spec:
               port: 17700
             initialDelaySeconds: 20
             periodSeconds: 10
+      volumes:
+        - name: backend-secrets
+          secret:
+            secretName: backend-secret
+            optional: true
+            items:
+              - key: redis-password
+                path: redis-password
+              - key: rabbitmq-password
+                path: rabbitmq-password

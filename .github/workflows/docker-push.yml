@@ -1,6 +1,11 @@
 name: Publish Docker Images
 on:
     workflow_call:
+        secrets:
+            DOCKER_HUB_USER:
+                required: true
+            DOCKER_HUB_PASSWORD:
+                required: true
 
 # Publishing images does not need to write to the repository. GitOps manifest
 # promotions must be made through a separately reviewed change.

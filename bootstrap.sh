@@ -7,12 +7,10 @@ echo "🚀 1. Starting Minikube..."
 minikube start --cpus=4 --memory=7500 --disk-size=30g
 minikube addons enable ingress
 
-echo "🐳 2. Loading Docker images into Minikube..."
-# Load local images to avoid Docker Hub rate limits and errors
-minikube image load an619/elastiflix-frontend:latest || true
-minikube image load an619/elastiflix-backend:latest || true
-minikube image load an619/elastiflix-frontend:v0.1.0 || true
-minikube image load an619/elastiflix-backend:v0.1.0 || true
+echo "🐳 2. Preparing application images..."
+# The Kubernetes workloads use immutable Docker Hub digests, not these legacy
+# mutable tags. Argo CD will pull the exact manifest references; don't mask
+# failed local image loads for tags that may not exist in the Docker daemon.
 
 echo "📦 3. Installing Argo CD..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -

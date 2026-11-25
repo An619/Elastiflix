@@ -233,6 +233,7 @@ CI enforces **≥ 80% coverage on new code** via the SonarCloud Quality Gate.
 - [CHANGELOG.md](CHANGELOG.md) — what changed and why
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to work on this repo (gates, layout, PR rules)
 - [SECURITY.md](SECURITY.md) — vulnerability reporting & security posture
+- [docs/adr](docs/adr/README.md) — architecture decision records (why GitOps, why SHA tags, why canary)
 
 ## 🤝 Contributing
 

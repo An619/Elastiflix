@@ -70,7 +70,7 @@ Open **GitHub Actions** and walk left → right:
 
 ## 6. Architecture walk-through (1–2 min)
 
-Open `README.md` → the architecture SVG. Narrate: *"One repo, one flow — build left to right: Developer → GitHub Actions → Docker Hub → Argo CD → the cluster. Inside the cluster: Ingress → Frontend → Backend → Elasticsearch, with Redis caching and RabbitMQ events, and everything observed by the ELK/Prometheus stack."*
+Open `docs/adr/` first if asked *why* (GitOps over push, SHA-tagged images, frontend canary, fail-open infra) — then open `README.md` → the architecture SVG. Narrate: *"One repo, one flow — build left to right: Developer → GitHub Actions → Docker Hub → Argo CD → the cluster. Inside the cluster: Ingress → Frontend → Backend → Elasticsearch, with Redis caching and RabbitMQ events, and everything observed by the ELK/Prometheus stack."*
 
 ---
 

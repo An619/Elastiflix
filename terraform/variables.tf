@@ -22,6 +22,16 @@ variable "environment" {
   }
 }
 
+variable "availability_zone_names" {
+  description = "Exactly three available, account-specific AZ names for this VPC (for example, us-east-2a, us-east-2b, us-east-2c). Confirm mappings and availability in the target account and region before planning."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.availability_zone_names) == 3 && length(toset(var.availability_zone_names)) == 3
+    error_message = "availability_zone_names must contain exactly three distinct AZ names."
+  }
+}
+
 variable "cluster_version" {
   description = "EKS Kubernetes minor version; verify AWS, provider, and add-on support before setting."
   type        = string

@@ -2,6 +2,9 @@ aws_region   = "us-east-2"
 cluster_name = "elastiflix"
 environment  = "dev"
 
+# Replace these examples with three AZ names confirmed in the target AWS account.
+availability_zone_names = ["REPLACE_WITH_AZ_1", "REPLACE_WITH_AZ_2", "REPLACE_WITH_AZ_3"]
+
 # Private EKS API by default. Add only a verified administrator public /32
 # or a similarly narrow IPv4 CIDR if temporary public endpoint access is needed.
 cluster_endpoint_public_access_cidrs = []

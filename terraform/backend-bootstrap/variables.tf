@@ -8,8 +8,8 @@ variable "state_bucket_name" {
   type        = string
 
   validation {
-    condition     = length(var.state_bucket_name) >= 3 && length(var.state_bucket_name) <= 63
-    error_message = "state_bucket_name must be 3 to 63 characters long."
+    condition     = length(var.state_bucket_name) >= 3 && length(var.state_bucket_name) <= 51
+    error_message = "state_bucket_name must be 3 to 51 characters long so the derived access-log bucket remains within S3's 63-character limit."
   }
 }
 

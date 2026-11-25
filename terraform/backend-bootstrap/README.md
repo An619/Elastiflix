@@ -4,10 +4,12 @@ This separate root creates the S3 bucket and DynamoDB table used by the main `te
 
 ## What it creates
 
-- An S3 state bucket with public access blocked, bucket-owner enforced ownership, SSE-S3 encryption, versioning, a TLS-only bucket policy, and `prevent_destroy` protection.
-- A DynamoDB `PAY_PER_REQUEST` lock table with server-side encryption and `prevent_destroy` protection.
+- An S3 state bucket with public access blocked, bucket-owner enforced ownership, a customer-managed KMS key, versioning, TLS-only access, server access logging, noncurrent-version lifecycle transition, and `prevent_destroy` protection.
+- A separate private server-access-log bucket, encrypted with the same KMS key and configured with versioning and a 90-day transition to S3 Standard-IA.
+- A DynamoDB `PAY_PER_REQUEST` lock table with KMS encryption, point-in-time recovery, and `prevent_destroy` protection.
+- A rotating KMS key with a 30-day deletion window and `prevent_destroy` protection. Treat the key as critical state-recovery infrastructure; deleting or disabling it can make state and logs unreadable.
 
-S3 storage/versioning and DynamoDB requests may incur AWS charges. EKS, NAT gateways, EC2 nodes/bastion, and load balancers are separate and materially larger cost items. No AWS resource was created by this change; do not run `apply` until you have reviewed the plan and costs.
+S3 storage/requests, DynamoDB point-in-time recovery, and a customer-managed KMS key may incur AWS charges. The key is more secure and controllable than SSE-S3, but costs more; confirm current regional pricing and whether your organization already provides an approved key before applying. Cross-region replication is intentionally not configured: it requires an independently governed destination and adds storage/transfer cost. No AWS resource was created by this change; do not run `apply` until you have reviewed the plan and costs.
 
 ## Bootstrap procedure (operator-run only)
 
@@ -19,9 +21,10 @@ S3 storage/versioning and DynamoDB requests may incur AWS charges. EKS, NAT gate
    terraform -chdir=terraform/backend-bootstrap init
    terraform -chdir=terraform/backend-bootstrap plan -var-file=backend-bootstrap.tfvars
    terraform -chdir=terraform/backend-bootstrap apply -var-file=backend-bootstrap.tfvars
+   terraform -chdir=terraform/backend-bootstrap output
    ```
 
-4. Copy `terraform/environments/dev.backend.hcl.example` and `production.backend.hcl.example` to private local backend config files, setting the output bucket and lock-table names. These config files must not be committed if they contain account-specific details.
+4. Copy `terraform/environments/dev.backend.hcl.example` and `production.backend.hcl.example` to private local backend config files, setting the output bucket, lock-table, and KMS key ARN from the bootstrap outputs. These config files must not be committed if they contain account-specific details. Preserve the existing dev state key and plan an explicit state migration/re-encryption if backend settings or key change.
 5. Initialize the main Terraform root for exactly one environment at a time, for example:
 
    ```sh

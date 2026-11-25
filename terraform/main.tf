@@ -1,13 +1,18 @@
 # terraform/main.tf
 
-data "aws_availability_zones" "available" {
+data "aws_availability_zones" "selected" {
   state = "available"
+
+  filter {
+    name   = "zone-name"
+    values = var.availability_zone_names
+  }
 }
 
 locals {
-  # Keep the VPC and EKS nodes in three available AZs without assuming that
-  # an account maps the same zone letters to the same physical locations.
-  availability_zones = slice(data.aws_availability_zones.available.names, 0, 3)
+  # The operator supplies three account/region-specific AZ names. This keeps
+  # subnet placement explicit and prevents newly added AZs silently changing it.
+  availability_zones = data.aws_availability_zones.selected.names
 }
 
 module "vpc" {

@@ -162,7 +162,7 @@ Argo CD UI: http://argocd.local (`admin` / `admin123`) · App: http://elastiflix
 
 AWS deployment is intentionally **not** automatic. Review the network, state-backend, version, and cost assumptions before running any `apply` command. EKS control-plane hours, EC2 nodes/bastion, NAT gateways, ALB, EBS, S3 and DynamoDB may incur charges; check current regional pricing and review a Terraform plan first.
 
-Bootstrap the remote-state bucket and lock table only after reviewing `terraform/backend-bootstrap/README.md`. The bootstrap uses local state and creates AWS resources; it has not been run from this repository. Then create private local copies of the dev backend/tfvars examples, choose a supported EKS Kubernetes version, and initialize/plan the environment explicitly:
+Bootstrap the remote-state bucket, access-log bucket, KMS key, and lock table only after reviewing `terraform/backend-bootstrap/README.md` and the current AWS costs. The bootstrap uses local state and creates AWS resources; it has not been run from this repository. Then create private local copies of the dev backend/tfvars examples, set the output bucket/table/KMS key values, choose a supported EKS Kubernetes version, and replace the AZ placeholders with three names verified in the target account and region before initializing/planning the environment explicitly:
 
 ```bash
 cp terraform/environments/dev.backend.hcl.example terraform/environments/dev.backend.hcl

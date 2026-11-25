@@ -8,7 +8,7 @@
     "start": "node src/Backend.js",
     "dev": "nodemon src/Backend.js",
     "test": "node --test",
-    "test:coverage": "c8 --reporter=lcov --report-dir=coverage node --test test/"
+    "test:coverage": "c8 --reporter=lcov --report-dir=coverage node --test"
   },
   "dependencies": {
     "@elastic/search-ui-elasticsearch-connector": "^1.8.0",

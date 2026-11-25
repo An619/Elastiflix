@@ -47,8 +47,10 @@ echo "🔑 7c. Creating local Secrets for Minikube (no ESO / AWS on this cluster
 # sealed against a different cluster's key and cannot decrypt here, so
 # create plain Secrets locally. Override via env vars if needed:
 #   REDIS_PASSWORD=... RABBITMQ_PASSWORD=... ./bootstrap.sh
-kubectl create namespace infra --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace elastiflix --dry-run=client -o yaml | kubectl apply -f -
+# Create project namespaces with their Pod Security Admission labels before
+# workloads or secrets are created. elastiflix/infra enforce the restricted
+# profile; namespaces with third-party chart or hostPath workloads only warn.
+kubectl apply -f kubernetes/namespaces/namespaces.yaml
 kubectl create secret generic redis-secret -n infra \
   --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
   --dry-run=client -o yaml | kubectl apply -f -

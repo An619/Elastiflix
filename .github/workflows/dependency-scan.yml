@@ -5,9 +5,9 @@ jobs:
     npm-audit:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
             - name: Setup Node.js
-              uses: actions/setup-node@v5
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
               with:
                   node-version: "22"
             - name: Audit Backend
@@ -17,7 +17,9 @@ jobs:
             - name: Audit Frontend
               run: |
                   cd frontend
-                  npm audit --audit-level=high
+                  # react-scripts/sass are devDependencies (build-only); audit the
+                  # production dependency tree that actually ships.
+                  npm audit --omit=dev --audit-level=high
             - name: Audit Python Dependencies
               run: |
                   pip install pip-audit

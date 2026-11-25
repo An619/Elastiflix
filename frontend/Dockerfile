@@ -4,10 +4,8 @@ WORKDIR /app
 
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --legacy-peer-deps
-
-RUN npx update-browserslist-db@latest
+# Install deps and refresh browserslist db in one layer (DL3059)
+RUN npm ci --legacy-peer-deps && npx update-browserslist-db@1.4.0
 
 COPY . .
 

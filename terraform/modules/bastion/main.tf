@@ -73,10 +73,10 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
 
-  # The bastion lives in a public subnet (see terraform/main.tf) but the
-  # VPC module does not set map_public_ip_on_launch, so without this the
-  # instance gets no public IP and SSM Session Manager cannot reach it.
-  associate_public_ip_address = true
+  # No public IP: the host lives in a private subnet and reaches the SSM
+  # service through the VPC's NAT gateway (see terraform/main.tf).
+  # Session Manager only needs outbound 443.
+  associate_public_ip_address = false
 
   # Checkov Fixes:
   monitoring    = true

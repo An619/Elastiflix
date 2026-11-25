@@ -25,7 +25,9 @@ module "bastion" {
   source = "./modules/bastion"
 
   vpc_id       = module.vpc.vpc_id
-  subnet_id    = module.vpc.public_subnets[0]
+  # Private subnet: SSM reaches AWS APIs via the NAT gateway - the
+  # bastion never needs a public IP (satisfies Checkov CKV_AWS_88).
+  subnet_id    = module.vpc.private_subnets[0]
   cluster_name = var.cluster_name
   environment  = var.environment
 }

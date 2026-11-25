@@ -38,7 +38,7 @@ def main():
         print(f"Deleted existing index {args.index_name}")
 
     print(f"Reading template from {args.template_path}")
-    with open(args.template_path, 'r') as f:
+    with open(args.template_path, 'r', encoding='utf-8') as f:
         template = json.load(f)
 
     # Extract just the mappings part from the template

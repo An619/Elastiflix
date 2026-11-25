@@ -58,6 +58,15 @@ jobs:
               run: terraform -chdir=terraform init -backend=false
             - name: Validate Terraform configuration
               run: terraform -chdir=terraform validate
+            - name: Initialize and validate remote-state bootstrap configuration
+              run: |
+                  terraform -chdir=terraform/backend-bootstrap init -backend=false
+                  terraform -chdir=terraform/backend-bootstrap validate
+            - name: Validate Ansible playbook syntax
+              run: |
+                  python3 -m venv /tmp/ansible-venv
+                  /tmp/ansible-venv/bin/pip install --disable-pip-version-check --no-input ansible-core==2.19.6
+                  /tmp/ansible-venv/bin/ansible-playbook --syntax-check ansible/playbook.yml
             - name: Validate Kubernetes Manifests
               run: |
                   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure

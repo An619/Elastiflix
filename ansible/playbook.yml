@@ -1,44 +1,98 @@
-- name: Bootstrap EKS Cluster
+---
+- name: Bootstrap EKS cluster add-ons
   hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    eks_cluster_name: "{{ lookup('env', 'EKS_CLUSTER_NAME') }}"
+    alb_controller_role_arn: "{{ lookup('env', 'ALB_CONTROLLER_ROLE_ARN') }}"
   tasks:
-    - name: Add Helm Repos
-      command: "helm repo add {{ item.name }} {{ item.url }}"
+    - name: Require Terraform outputs for this cluster
+      ansible.builtin.assert:
+        that:
+          - eks_cluster_name | length > 0
+          - alb_controller_role_arn is match('^arn:[^:]+:iam::[0-9]{12}:role/.+')
+        fail_msg: >-
+          Export EKS_CLUSTER_NAME and ALB_CONTROLLER_ROLE_ARN from the selected
+          Terraform environment before running this playbook.
+
+    - name: Add Helm repositories
+      ansible.builtin.command:
+        argv:
+          - helm
+          - repo
+          - add
+          - "{{ item.name }}"
+          - "{{ item.url }}"
+          - --force-update
       loop:
-        - { name: "argo", url: "https://argoproj.github.io/argo-helm" }
-        - {
-            name: "external-secrets",
-            url: "https://charts.external-secrets.io",
-          }
-        - { name: "eks", url: "https://aws.github.io/eks-charts" }
+        - name: argo
+          url: https://argoproj.github.io/argo-helm
+        - name: external-secrets
+          url: https://charts.external-secrets.io
+        - name: eks
+          url: https://aws.github.io/eks-charts
 
     - name: Install Argo CD
-      command: helm upgrade --install argocd argo/argo-cd --namespace argocd --create-namespace
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - argocd
+          - argo/argo-cd
+          - --namespace
+          - argocd
+          - --create-namespace
 
     - name: Install External Secrets Operator
-      command: helm upgrade --install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - external-secrets
+          - external-secrets/external-secrets
+          - --namespace
+          - external-secrets
+          - --create-namespace
 
-    # The ALB controller is installed with serviceAccount.create=false so
-    # it uses the IRSA-annotated ServiceAccount created below (role
-    # provisioned by terraform/alb.tf). Without this SA the controller
-    # pods crash-loop with "serviceaccount not found".
-    - name: Create ALB controller ServiceAccount (IRSA)
-      command: >-
-        kubectl create serviceaccount aws-load-balancer-controller
-        --namespace kube-system
-        --dry-run=client -o yaml | kubectl apply -f -
+    - name: Create AWS Load Balancer Controller service account
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl create serviceaccount aws-load-balancer-controller \
+          --namespace kube-system --dry-run=client -o yaml |
+          kubectl apply -f -
+      args:
+        executable: /bin/bash
 
-    - name: Annotate ALB ServiceAccount with IRSA role
-      command: >-
-        kubectl annotate serviceaccount aws-load-balancer-controller
-        --namespace kube-system
-        eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') }}:role/elastiflix-alb-role
-        --overwrite
-      when: lookup('env', 'AWS_ACCOUNT_ID') is defined and lookup('env', 'AWS_ACCOUNT_ID') != ''
+    - name: Annotate the controller service account with its Terraform IRSA role
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - annotate
+          - serviceaccount
+          - aws-load-balancer-controller
+          - --namespace
+          - kube-system
+          - "eks.amazonaws.com/role-arn={{ alb_controller_role_arn }}"
+          - --overwrite
 
     - name: Install AWS Load Balancer Controller
-      command: >
-        helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller
-        --namespace kube-system
-        --set clusterName=elastiflix-eks
-        --set serviceAccount.create=false
-        --set serviceAccount.name=aws-load-balancer-controller
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - aws-load-balancer-controller
+          - eks/aws-load-balancer-controller
+          - --version
+          - 3.7.0
+          - --namespace
+          - kube-system
+          - --set
+          - "clusterName={{ eks_cluster_name }}"
+          - --set
+          - serviceAccount.create=false
+          - --set
+          - serviceAccount.name=aws-load-balancer-controller

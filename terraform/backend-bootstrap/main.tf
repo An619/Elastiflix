@@ -167,6 +167,28 @@ resource "aws_s3_bucket_lifecycle_configuration" "state_access_logs" {
   }
 }
 
+resource "aws_s3_bucket_policy" "state_access_logs_tls" {
+  bucket = aws_s3_bucket.state_access_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource = [
+        aws_s3_bucket.state_access_logs.arn,
+        "${aws_s3_bucket.state_access_logs.arn}/*"
+      ]
+      Condition = {
+        Bool = { "aws:SecureTransport" = "false" }
+      }
+    }]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.state_access_logs]
+}
+
 resource "aws_s3_bucket_policy" "state_access_logs" {
   bucket = aws_s3_bucket.state_access_logs.id
   policy = jsonencode({

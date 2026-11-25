@@ -14,8 +14,6 @@
 ![Argo CD](https://img.shields.io/badge/Argo_CD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions_CI/CD-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
 
-![Elastiflix — a cloud-native, production-grade movie search platform](img/elastiflix-3d-hero.jpg)
-
 Elastiflix is a **production-grade, 3-tier movie-search application** (React · Node.js · Elasticsearch) wrapped in a full **DevSecOps + GitOps** delivery pipeline: every commit is tested, scanned, containerized, promoted, and rolled out by declarative manifests — with observability, secrets management, and backups included. It runs the same on a laptop (Docker Compose or Minikube) and on AWS EKS.
 
 > **Live traffic path:** User → NGINX Ingress → Frontend (nginx) → Backend (Express) → Elasticsearch

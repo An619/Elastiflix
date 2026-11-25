@@ -56,7 +56,7 @@ Open **GitHub Actions** and walk left → right:
 3. `dependency-checks` — frontend full-tree npm audit with exact, expiring CRA build-toolchain exceptions; frontend production and backend npm audits at HIGH+, plus pip-audit.
 4. `code-quality` — Hadolint on all four Dockerfiles.
 5. `sonar-qube` — SonarCloud Quality Gate: **≥ 80% coverage on new code, 0 blocking issues** — demonstrate it by opening the PR quality gate (PR #1 history shows it going from 47.7% → 83.0% coverage and C → A security rating).
-6. `docker-checks` — Trivy filesystem and image scans (fixable CRITICAL/HIGH findings block; all CRITICAL/HIGH findings are reported) + Checkov (Terraform hard gate; k8s report-only while manifest hardening is pending).
+6. `docker-checks` — Trivy filesystem and image scans (fixable CRITICAL/HIGH findings block; all CRITICAL/HIGH findings are reported) + Checkov (Terraform and Kubernetes hard gates; Kubernetes has one documented, expiring backend image-compatibility exception).
 7. `docker-push` (main only) — builds and publishes both `an619/elastiflix-*:<sha>` images with SBOM/provenance, signs and verifies each digest with Cosign, then reports tag and digest references. It does not write to Git; digest promotion requires a separately reviewed manifest change.
 
 **Say:** "Every third-party action is pinned to a commit SHA — a compromised tag can't reach the pipeline."
@@ -100,8 +100,8 @@ A single node can't allocate a replica on the same node, so the primary shard is
 **How would you roll back a bad deploy?**
 Frontend: `kubectl argo rollouts undo rollout/frontend -n elastiflix` (or `abort`). Backend: `kubectl rollout undo deploy/backend -n elastiflix`. GitOps-wise: revert the commit that bumped the tag — Argo CD reconciles everything back automatically.
 
-**Why is k8s Checkov report-only but Terraform hard-fail?**
-Terraform checks pass in the local Checkov 3.4.10 run and are enforced as a hard gate. The Kubernetes scan reported 104 findings locally (including image digest pinning, seccomp, and workload hardening); it remains explicitly report-only and tracked as tech debt rather than silently ignored.
+**How is Kubernetes Checkov enforced?**
+Terraform and Kubernetes Checkov scans are hard gates. The Kubernetes manifests now pass Checkov 3.4.10 with one time-bound exception: the currently pinned backend image still needs a rebuild before it can read mounted secret files. The exception has an owner, expiry, and removal condition in `docs/security/phase-2-kubernetes-hardening.md`.
 
 **How would this scale?**
 ES: dedicated master/data nodes, shard count tuned to the index budget. Backend: HPA on CPU + RPS (metrics already exposed). Frontend is static behind nginx — trivially horizontal. Redis: add a replica + Sentinel. RabbitMQ: quorum queues at higher throughput.

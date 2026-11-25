@@ -1,0 +1,231 @@
+# NetworkPolicy enforcement requires EKS VPC CNI network-policy support to be
+# enabled by the cluster owner before these manifests are promoted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elastic-stack-default-deny-ingress
+  namespace: elastic-stack
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elasticsearch-ingress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: elasticsearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kibana
+        - podSelector:
+            matchLabels:
+              app: logstash
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: elastiflix
+          podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 9200
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logstash-ingress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: logstash
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: filebeat
+      ports:
+        - protocol: TCP
+          port: 5044
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kibana-ingress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: kibana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 5601
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elasticsearch-egress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: elasticsearch
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kibana-egress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: kibana
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+---
+# Logstash currently fetches the catalogue during init. Its only external
+# egress is HTTPS; replacing this bootstrap with a pre-baked catalogue image
+# will let Phase 2 narrow this rule to no internet egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logstash-egress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: logstash
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Filebeat needs the Kubernetes API for add_kubernetes_metadata and Logstash
+# for delivery. This assumes API traffic uses private EKS control-plane ENIs
+# in the Terraform subnets; confirm the actual endpoint/service translation
+# and VPC CNI policy behavior before rollout. A public-only endpoint needs a
+# different, explicitly reviewed egress rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: filebeat-egress
+  namespace: elastic-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: filebeat
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: elastic-stack
+          podSelector:
+            matchLabels:
+              app: logstash
+      ports:
+        - protocol: TCP
+          port: 5044
+    - to:
+        - ipBlock:
+            cidr: 10.0.1.0/24
+        - ipBlock:
+            cidr: 10.0.2.0/24
+        - ipBlock:
+            cidr: 10.0.3.0/24
+      ports:
+        - protocol: TCP
+          port: 443

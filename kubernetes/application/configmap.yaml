@@ -10,9 +10,9 @@ data:
   ES_HOST: "http://elasticsearch.elastic-stack.svc.cluster.local:9200"
   ES_INDEX: "elastiflix-movies"
   ES_API_KEY: ""
-  # REDIS_URL / RABBITMQ_URL are injected from the backend-secret Secret
-  # (see backend/deployment.yaml env). Do NOT put passwords here —
-  # ConfigMaps are plaintext in etcd and in Git.
+  # REDIS_PASSWORD / RABBITMQ_PASSWORD are injected from backend-secret
+  # (see backend/deployment.yaml). Do NOT put passwords here — ConfigMaps
+  # are plaintext in etcd and in Git.
   REDIS_HOST: "redis.infra.svc.cluster.local"
   REDIS_PORT: "6379"
   RABBITMQ_HOST: "rabbitmq.infra.svc.cluster.local"

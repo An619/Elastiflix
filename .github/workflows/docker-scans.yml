@@ -85,10 +85,83 @@ jobs:
             # and cannot be expressed as a commit hash.
             - name: Checkov Terraform Scan
               run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
-            # Kubernetes scan is report-only for now: the raw scan reports
-            # 104 findings in the local Checkov 3.4.10 validation (including
-            # digest pinning, seccomp profiles, and runtime hardening).
-            # Keep these findings visible as tracked hardening debt; make the
-            # Kubernetes scan blocking after the remediation pass is complete.
-            - name: Checkov Kubernetes Scan (report-only)
-              run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail
+            - name: Set up Buildx for image digest resolution
+              uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+            - name: Resolve candidate Kubernetes image digests (read-only)
+              run: |
+                  images=(
+                    an619/elastiflix-backend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
+                    an619/elastiflix-frontend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
+                    docker.elastic.co/elasticsearch/elasticsearch:9.1.0
+                    docker.elastic.co/kibana/kibana:9.1.0
+                    docker.elastic.co/logstash/logstash:9.1.0
+                    docker.elastic.co/beats/filebeat:9.1.0
+                    python:3.12-alpine
+                    redis:7-alpine
+                    rabbitmq:3-management-alpine
+                  )
+                  summary_file="$(mktemp)"
+                  for image in "${images[@]}"; do
+                    digest="$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')"
+                    if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                      echo "Unable to resolve an OCI digest for $image" >&2
+                      exit 1
+                    fi
+                    reference="${image%:*}@${digest}"
+                    printf '%s\n' "- \`$reference\`" >> "$summary_file"
+                    echo "::notice title=Resolved immutable image::$reference"
+                  done
+                  {
+                    echo "### Candidate immutable Kubernetes image references"
+                    cat "$summary_file"
+                  } >> "$GITHUB_STEP_SUMMARY"
+            # Keep JSON output and a findings summary, but fail the gate if any
+            # unsuppressed Kubernetes checks or YAML parsing errors remain.
+            - name: Checkov Kubernetes Scan
+              run: |
+                  .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail \
+                    --output json --output-file-path /tmp/checkov-kubernetes
+                  .venv/bin/python - <<'PY'
+                  import json
+                  import os
+                  from collections import Counter
+                  from pathlib import Path
+
+                  import yaml
+
+                  report = json.loads(Path("/tmp/checkov-kubernetes/results_json.json").read_text())
+                  results = report.get("results", {})
+                  failed = results.get("failed_checks", [])
+                  passed = results.get("passed_checks", [])
+                  skipped = results.get("skipped_checks", [])
+                  counts = report.get("summary", {})
+                  by_check = Counter((item.get("check_id", "unknown"), item.get("check_name", "")) for item in failed)
+                  summary = [
+                      "### Kubernetes Checkov hard gate",
+                      f"Passed: {counts.get('passed', len(passed))} · Failed: {counts.get('failed', len(failed))} · Skipped: {counts.get('skipped', len(skipped))} · Parse errors: {counts.get('parsing_errors', 0)}",
+                      "",
+                      "| Check | Findings | Policy |",
+                      "| --- | ---: | --- |",
+                  ]
+                  summary.extend(
+                      f"| `{check_id}` | {count} | {name} |"
+                      for (check_id, name), count in sorted(by_check.items())
+                  )
+                  exceptions = []
+                  for manifest in Path("kubernetes").rglob("*.yaml"):
+                      with manifest.open(encoding="utf-8") as source:
+                          for resource in yaml.safe_load_all(source):
+                              if not isinstance(resource, dict):
+                                  continue
+                              annotations = resource.get("metadata", {}).get("annotations", {})
+                              value = annotations.get("checkov.io/skip") if isinstance(annotations, dict) else None
+                              if value:
+                                  check_id, _, reason = value.partition("=")
+                                  exceptions.append(f"- `{check_id}` — {reason} ({manifest})")
+                  if exceptions:
+                      summary.extend(["", "**Documented exceptions:**", *exceptions])
+                  with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+                      output.write("\n".join(summary) + "\n")
+                  if failed or counts.get("parsing_errors", 0):
+                      raise SystemExit("Kubernetes Checkov hard gate failed; resolve findings and parse errors above.")
+                  PY

@@ -17,3 +17,13 @@ variable "state_lock_table_name" {
   description = "DynamoDB table name for Terraform state locking."
   type        = string
 }
+
+variable "access_log_bucket_name" {
+  description = "Name of an existing, approved S3 access-log bucket in the same AWS account and region, already configured to accept server access logs from the state bucket."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.access_log_bucket_name)) > 0 && var.access_log_bucket_name != var.state_bucket_name
+    error_message = "access_log_bucket_name must name a separate, non-empty S3 bucket."
+  }
+}

@@ -31,7 +31,7 @@ A local Checkov 3.4.10 scan initially reported **104 findings**. The current man
 - Checkov 3.4.10 local scan: **679 passed, 0 failed, 0 skipped, 0 parsing errors**.
 - Backend Node tests: **30 passed, 0 failed**.
 - Frontend Jest tests: **13 passed, 0 failed**; production build succeeded.
-- Hosted workflows on PR #26 and the main merge succeeded; the main `docker-push` job published and signed the frontend/backend images. Hosted validation for the follow-up digest-promotion PR is still required.
+- Hosted checks passed on PRs #26–#28. The #27 post-merge run exposed a digest-resolution ordering issue, fixed in PR #28. The latest main workflow passed after retrying its Cosign job; it published and signed both application images. No AWS cluster or GitOps rollout was initiated by these actions.
 - Kubernetes YAML parsing and `git diff --check` passed locally.
 
 ## Exit criteria

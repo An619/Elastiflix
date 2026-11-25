@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: an619/elastiflix-frontend:latest
+          image: an619/elastiflix-frontend:948ae0e8f1d5f2fb890c368668c8cac9ecde3ed7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

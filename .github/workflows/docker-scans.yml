@@ -5,7 +5,7 @@ jobs:
     trivy-filesystem-scan:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Scan filesystem dependencies
               uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
               with:
@@ -40,7 +40,7 @@ jobs:
             matrix:
                 service: [frontend, backend]
         steps:
-            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Build ${{ matrix.service }} Image
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -74,7 +74,7 @@ jobs:
     checkov-iac-scan:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Setup Checkov
               run: |
                   python3 -m venv .venv

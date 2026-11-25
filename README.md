@@ -120,7 +120,7 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 
 | Tool | Used for |
 |---|---|
-| **Terraform** | AWS: VPC, **EKS** (managed node groups), IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTP egress only for APT), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
+| **Terraform** | AWS: VPC, **EKS** (private managed nodes and private API by default), IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTPS-only egress), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
 | **Ansible** | Cluster bootstrap: Helm repos → Argo CD → External Secrets Operator → ALB controller (IRSA ServiceAccount) |
 | **AWS** | EKS, EC2 bastion, IAM/IRSA, Secrets Manager, VPC/NAT, ALB |
 | **kubeseal** | Sealing infra secrets into `kubernetes/infra/*-sealedsecret.yaml` |
@@ -160,14 +160,28 @@ Argo CD UI: http://argocd.local (`admin` / `admin123`) · App: http://elastiflix
 
 ### 3. AWS EKS (Terraform + Ansible)
 
+AWS deployment is intentionally **not** automatic. Review the network, state-backend, version, and cost assumptions before running any `apply` command. EKS control-plane hours, EC2 nodes/bastion, NAT gateways, ALB, EBS, S3 and DynamoDB may incur charges; check current regional pricing and review a Terraform plan first.
+
+Bootstrap the remote-state bucket and lock table only after reviewing `terraform/backend-bootstrap/README.md`. The bootstrap uses local state and creates AWS resources; it has not been run from this repository. Then create private local copies of the dev backend/tfvars examples, choose a supported EKS Kubernetes version, and initialize/plan the environment explicitly:
+
 ```bash
-cd terraform
-terraform init && terraform apply        # VPC, EKS, IAM/IRSA, bastion
-cd ..
-ansible-playbook ansible/playbook.yml    # Argo CD, ESO, ALB controller
+cp terraform/environments/dev.backend.hcl.example terraform/environments/dev.backend.hcl
+cp terraform/environments/dev.tfvars.example terraform/environments/dev.tfvars
+# Fill in the owned state bucket/table and a reviewed cluster_version first.
+terraform -chdir=terraform init -backend-config=environments/dev.backend.hcl
+terraform -chdir=terraform plan -var-file=environments/dev.tfvars -out=dev.tfplan
 ```
 
-Then sync the Argo CD applications; everything else reconciles itself. See [FROM-SCRATCH.md](FROM-SCRATCH.md).
+The EKS API stays private unless you supply a restricted public CIDR list. After provisioning is explicitly approved, run the bootstrap from a network that can reach the private API and export the actual Terraform outputs:
+
+```bash
+export EKS_CLUSTER_NAME="$(terraform -chdir=terraform output -raw eks_cluster_name)"
+export ALB_CONTROLLER_ROLE_ARN="$(terraform -chdir=terraform output -raw alb_controller_role_arn)"
+ansible-playbook --syntax-check ansible/playbook.yml
+ansible-playbook ansible/playbook.yml
+```
+
+Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md) and [FROM-SCRATCH.md](FROM-SCRATCH.md).
 
 ---
 

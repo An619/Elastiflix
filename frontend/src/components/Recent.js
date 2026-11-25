@@ -53,14 +53,14 @@ function Recent() {
             <h2>Recent movies</h2>
             <div className="row__posters">
               {
-                results.filter(r => r.poster_path.raw !== null).map(r =>
+                results.filter(r => Boolean(r.poster_path?.raw)).map(r =>
                   <img
                     key={r.id.raw}
                     className="row__poster row__posterLarge"
                     src={!r.poster_path.raw ? ComingSoon : `https://image.tmdb.org/t/p/original/${r.poster_path.raw}`}
                     alt={r.title.raw}
                     onClick={() => {
-                      window.location.href = `/movie?id=${r.id.raw}`
+                      window.location.href = `/movie?id=${encodeURIComponent(r.id.raw)}`
                     }}
                   />
                 )}

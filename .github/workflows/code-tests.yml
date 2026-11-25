@@ -5,22 +5,39 @@ jobs:
     test:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
             - name: Setup Node.js
-              uses: actions/setup-node@v5
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
               with:
                   node-version: "22"
                   cache: "npm"
                   cache-dependency-path: |
                       frontend/package-lock.json
                       backend/package-lock.json
-            - name: Build Frontend
+            - name: Test Frontend
               run: |
                   cd frontend
                   npm ci --legacy-peer-deps
+                  CI=true npm test -- --watchAll=false
+            - name: Build Frontend
+              run: |
+                  cd frontend
                   npm run build
             - name: Test Backend
               run: |
                   cd backend
                   npm ci
-                  npm test --if-present
+                  npm test
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+              with:
+                  terraform_version: 1.9.8
+            - name: Terraform Validate
+              run: |
+                  terraform fmt -recursive terraform/
+                  terraform -chdir=terraform init -backend=false
+                  terraform -chdir=terraform validate
+            - name: Validate Kubernetes Manifests
+              run: |
+                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
+                  /tmp/kubeconform -strict -summary kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/ || true

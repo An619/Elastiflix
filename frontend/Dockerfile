@@ -1,13 +1,11 @@
-FROM node:23-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --force
-
-RUN npx update-browserslist-db@latest
+# Install dependencies (single layer, per hadolint DL3059)
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 

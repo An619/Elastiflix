@@ -18,6 +18,7 @@ build_frontend:
   script:
     - cd frontend
     - npm ci --legacy-peer-deps
+    - CI=true npm test -- --watchAll=false
     - npm run build
   artifacts:
     paths:
@@ -30,7 +31,7 @@ build_backend:
   script:
     - cd backend
     - npm ci
-    - npm test --if-present
+    - npm test
 
 # ----------------------------------------
 # Stage 2: Security Scanning (DevSecOps)
@@ -41,7 +42,7 @@ trivy_scan:
     name: aquasec/trivy:latest
     entrypoint: [""]
   script:
-    - trivy fs --exit-code 0 --severity HIGH,CRITICAL --no-progress .
+    - trivy fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress .
 
 # ----------------------------------------
 # Stage 3: Package (Docker Build & Push)

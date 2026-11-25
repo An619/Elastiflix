@@ -28,11 +28,16 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
-          # NEW: Load the password from the Sealed Secret
-          envFrom:
-            - secretRef:
-                name: redis-secret
-          # UPDATED: Use the environment variable instead of hardcoded text
+          # Explicit mapping: the Secret key is `redis-password`, but the
+          # redis-server command expands $(REDIS_PASSWORD). envFrom would
+          # export `redis-password` verbatim and the password would stay
+          # the literal string "$(REDIS_PASSWORD)".
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: redis-password
           command:
             [
               "redis-server",
@@ -44,6 +49,9 @@ spec:
           ports:
             - containerPort: 6379
           resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
             limits:
               memory: "256Mi"
               cpu: "250m"
@@ -99,20 +107,25 @@ spec:
       containers:
         - name: rabbitmq
           image: rabbitmq:3-management-alpine
-          # NEW: Load the password from the Sealed Secret
-          envFrom:
-            - secretRef:
-                name: rabbitmq-secret
+          # RabbitMQ reads RABBITMQ_DEFAULT_PASS (not `rabbitmq-password`),
+          # so map the Secret key explicitly.
           env:
             - name: RABBITMQ_DEFAULT_USER
               value: "user"
-            # DELETED: RABBITMQ_DEFAULT_PASS is removed from here
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: rabbitmq-password
           ports:
             - containerPort: 5672
               name: amqp
             - containerPort: 15672
               name: management
           resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
             limits:
               memory: "512Mi"
               cpu: "500m"

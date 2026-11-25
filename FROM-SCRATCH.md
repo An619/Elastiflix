@@ -190,9 +190,9 @@ Get the data. This repo's `data-loader/movies/movies.json.gz` is the same
 6,959-movie set used everywhere else in this project:
 
 ```bash
-git clone https://github.com/LondheShubham153/Elastiflix.git
+git clone https://github.com/An619/Elastiflix.git
 cd Elastiflix
-git checkout elk-one-shot
+git checkout main
 ```
 
 Elasticsearch's `_bulk` API and Logstash's `file` input both want one JSON

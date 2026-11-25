@@ -3,6 +3,11 @@ name: Enterprise DevSecOps Pipeline
 on:
     push:
         branches: [main]
+    pull_request:
+        branches: [main]
+
+permissions:
+    contents: write
 
 jobs:
     code-tests:
@@ -26,6 +31,7 @@ jobs:
         secrets: inherit
 
     docker-push:
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         needs:
             [
                 code-tests,

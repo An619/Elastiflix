@@ -10,7 +10,10 @@ image:
 architecture: standalone
 auth:
   enabled: true
-  password: "elastiflix-redis-pass"
+  # Do NOT commit real passwords. Override at install time:
+  #   helm install redis ./helm/redis --set auth.password="$REDIS_PASSWORD"
+  # or use existingSecret. Rotate any password previously committed here.
+  password: ""
 
 master:
   resources:

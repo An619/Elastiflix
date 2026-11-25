@@ -4,7 +4,10 @@ image:
 
 auth:
   username: user
-  password: "elastiflix-rabbit-pass"
+  # Do NOT commit real passwords. Override at install time:
+  #   helm install rabbitmq ./helm/rabbitmq --set auth.password="$RABBITMQ_PASSWORD"
+  # Rotate any password previously committed here.
+  password: ""
 
 persistence:
   enabled: true

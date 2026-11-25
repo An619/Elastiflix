@@ -13,9 +13,28 @@ spec:
       labels:
         app: logstash
     spec:
+      initContainers:
+        # movies.conf reads /data/movies.ndjson. Without this the K8s
+        # cluster indexes zero movies. Download the catalogue from the
+        # repo and convert it to NDJSON (same as start.sh does locally).
+        - name: prepare-data
+          image: python:3.12-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ ! -f /data/movies.ndjson ]; then
+                echo "Downloading movies.json.gz..."
+                wget -q -O /data/movies.json.gz "https://raw.githubusercontent.com/An619/Elastiflix/main/data-loader/movies/movies.json.gz"
+                python3 -c "import gzip, json; movies = json.load(gzip.open('/data/movies.json.gz', 'rt', encoding='utf-8')); open('/data/movies.ndjson', 'w', encoding='utf-8').write('\n'.join(json.dumps(m, ensure_ascii=False) for m in movies) + '\n'); print(f'{len(movies)} movies ready')"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
-        - name: logstash
-          image: docker.elastic.co/logstash/logstash:8.5.1
+        - name: logstash # NOSONAR - official Elastic image, pinned to 9.1.0
+          image: docker.elastic.co/logstash/logstash:9.1.0
           ports:
             - containerPort: 5044
               name: beats
@@ -37,8 +56,13 @@ spec:
             - name: config
               mountPath: /usr/share/logstash/config/pipelines.yml
               subPath: pipelines.yml
+            - name: logstash-yml
+              mountPath: /usr/share/logstash/config/logstash.yml
+              subPath: logstash.yml
             - name: templates
               mountPath: /usr/share/logstash/templates
+            - name: data
+              mountPath: /data
       volumes:
         - name: pipeline
           configMap:
@@ -46,9 +70,14 @@ spec:
         - name: config
           configMap:
             name: logstash-config
+        - name: logstash-yml
+          configMap:
+            name: logstash-config
         - name: templates
           configMap:
             name: logstash-templates
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

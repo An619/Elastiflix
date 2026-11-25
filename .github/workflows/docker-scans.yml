@@ -8,10 +8,10 @@ jobs:
             matrix:
                 service: [frontend, backend]
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
             - name: Build ${{ matrix.service }} Image
-              uses: docker/build-push-action@v6
+              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
               with:
                   context: ./${{ matrix.service }}
                   file: ./${{ matrix.service }}/Dockerfile.prod
@@ -20,7 +20,7 @@ jobs:
                   tags: an619/elastiflix-${{ matrix.service }}:latest
 
             - name: Scan ${{ matrix.service }} Image
-              uses: aquasecurity/trivy-action@0.35.0
+              uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
               with:
                   image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
                   format: "table"
@@ -28,13 +28,24 @@ jobs:
                   ignore-unfixed: true
                   severity: "CRITICAL,HIGH"
 
-    checkov-terraform-scan:
+    checkov-iac-scan:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
-            - name: Checkov IaC Scan
-              uses: bridgecrewio/checkov-action@master
-              with:
-                  directory: terraform/
-                  framework: terraform
-                  soft_fail: true
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Setup Checkov
+              run: |
+                  python3 -m venv .venv
+                  .venv/bin/pip install --quiet checkov==3.4.10
+            # Terraform gate stays hard. CKV_TF_1 (module sources must be
+            # commit-pinned) is skipped because the registry modules here
+            # are already version-pinned, which is the registry convention
+            # and cannot be expressed as a commit hash.
+            - name: Checkov Terraform Scan
+              run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
+            # Kubernetes scan is report-only for now: the raw scan reports
+            # ~105 findings (digest pinning, seccomp profiles, root-run
+            # beats) on manifests that cannot be fixed/verified without a
+            # cluster + registry. Track as tech debt; drop --soft-fail once
+            # the manifest hardening pass lands.
+            - name: Checkov Kubernetes Scan (report-only)
+              run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail

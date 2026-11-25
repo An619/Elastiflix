@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
+# Explicit prod API path (relative, proxied by nginx to backend:17700).
+# Without this the build bakes `undefined` and relies on runtime fallback.
+ENV REACT_APP_ES_API=/api
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime

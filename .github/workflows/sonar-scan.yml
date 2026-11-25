@@ -5,11 +5,36 @@ jobs:
     sonar:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
               with:
                   fetch-depth: 0
+            - name: Setup Node.js
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+              with:
+                  node-version: "22"
+                  cache: "npm"
+                  cache-dependency-path: |
+                      frontend/package-lock.json
+                      backend/package-lock.json
+            - name: Generate Frontend Coverage
+              run: |
+                  cd frontend
+                  npm ci --legacy-peer-deps # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  CI=true npm test -- --watchAll=false --coverage --collectCoverageFrom="src/**/*.{js,jsx}"
+            - name: Generate Backend Coverage
+              run: |
+                  cd backend
+                  npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  npm run test:coverage
+            - name: Generate Python Coverage
+              run: |
+                  cd data-loader
+                  python3 -m pip install --upgrade pip # NOSONAR - CI-only tooling
+                  pip install coverage # NOSONAR - CI-only tooling
+                  coverage run --include="index-data.py" test_index_data.py
+                  coverage xml -o coverage-python.xml
             - name: SonarCloud Scan
-              uses: SonarSource/sonarcloud-github-action@v5
+              uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -41,10 +41,9 @@ function SearchBar() {
 
             <SearchBox
                 inputView={renderInput}
-                debounceLength={0}
+                debounceLength={250}
                 onSubmit={searchTerm => {
-                    history.push("/search?q=" + searchTerm);
-                    window.location.href = "/search?q=" + searchTerm;
+                    history.push(`/search?q=${encodeURIComponent(searchTerm)}`);
                 }}
                 autocompleteMinimumCharacters={2}
                 autocompleteResults={{
@@ -53,7 +52,7 @@ function SearchBar() {
                 }}
                 onSelectAutocomplete={(selection) => {
                     if (selection.title) {
-                        window.location.href = "/search?q=" + selection.title.raw;
+                        history.push(`/search?q=${encodeURIComponent(selection.title.raw)}`);
                     }
                 }}
             />

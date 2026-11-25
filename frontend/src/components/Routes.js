@@ -9,9 +9,9 @@ import Movie from './Movie';
 const Routes = () => (
     <>
         <Switch>
-          <RouteWrapper exact path="/">
+          <Route exact path="/">
             <Redirect to="/home" />
-          </RouteWrapper>
+          </Route>
           <RouteWrapper exact path="/home" component={Home} layout={Layout}/>
           <RouteWrapper exact path="/search" component={SearchPage} layout={Layout}/>
           <RouteWrapper exact path="/movie" component={Movie} layout={Layout}/>
@@ -20,15 +20,15 @@ const Routes = () => (
 )
 
 function RouteWrapper({
-  component: Component, 
-  layout: Layout, 
+  component: Component,
+  layout: LayoutComponent,
   ...rest
 }) {
   return (
     <Route {...rest} render={(props) =>
-      <Layout {...props}>
+      <LayoutComponent {...props}>
         <Component {...props} />
-      </Layout>
+      </LayoutComponent>
     } />
   );
 }

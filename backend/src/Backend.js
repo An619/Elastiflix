@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import SearchConnector from "./SearchConnector.js";
 import RerankConnector from "./RerankConnector.js";
@@ -27,13 +28,26 @@ if (process.env.LOCAL) {
 }
 app.use(express.json());
 
-// --- URL helpers: allow password-only envs (K8s Secrets) ---
+// --- URL helpers: support Kubernetes Secret volumes as well as local envs ---
+function secretValue(name) {
+  const secretPath = process.env[`${name}_FILE`];
+  if (secretPath) {
+    try {
+      return readFileSync(secretPath, "utf8").replace(/\r?\n$/, "");
+    } catch (error) {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+  return process.env[name];
+}
+
 function redisUrl() {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
   const host = process.env.REDIS_HOST;
   if (!host) return undefined;
   const port = process.env.REDIS_PORT || "6379";
-  const pass = process.env.REDIS_PASSWORD;
+  const pass = secretValue("REDIS_PASSWORD");
   return pass ? `redis://:${encodeURIComponent(pass)}@${host}:${port}` : `redis://${host}:${port}`;
 }
 
@@ -43,7 +57,7 @@ function rabbitmqUrl() {
   if (!host) return undefined;
   const port = process.env.RABBITMQ_PORT || "5672";
   const user = process.env.RABBITMQ_USER || "user";
-  const pass = process.env.RABBITMQ_PASSWORD;
+  const pass = secretValue("RABBITMQ_PASSWORD");
   return pass
     ? `amqp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`
     : `amqp://${encodeURIComponent(user)}@${host}:${port}`;

@@ -14,9 +14,18 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: elasticsearch
-          image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0
+          image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0@sha256:47f91984aa1065d745f0a7c827bc912ea1ac439c635854902b65b6ed77f62055
+          imagePullPolicy: Always
           ports:
             - containerPort: 9200
               name: http
@@ -40,6 +49,20 @@ spec:
             limits:
               cpu: "1000m"
               memory: "2Gi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 20
           readinessProbe:
             exec:
               command:
@@ -52,6 +75,15 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /usr/share/elasticsearch/data
+            - name: elasticsearch-logs
+              mountPath: /usr/share/elasticsearch/logs
+            - name: elasticsearch-tmp
+              mountPath: /tmp
+      volumes:
+        - name: elasticsearch-logs
+          emptyDir: {}
+        - name: elasticsearch-tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data

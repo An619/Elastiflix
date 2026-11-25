@@ -115,18 +115,19 @@ jobs:
                     echo "### Candidate immutable Kubernetes image references"
                     cat "$summary_file"
                   } >> "$GITHUB_STEP_SUMMARY"
-            # Kubernetes scan remains report-only until the manifest-hardening
-            # pass is complete. Preserve machine-readable results and summarize
-            # remaining debt in the job summary for each run.
-            - name: Checkov Kubernetes Scan (report-only)
+            # Keep JSON output and a findings summary, but fail the gate if any
+            # unsuppressed Kubernetes checks or YAML parsing errors remain.
+            - name: Checkov Kubernetes Scan
               run: |
                   .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail \
                     --output json --output-file-path /tmp/checkov-kubernetes
-                  python3 - <<'PY'
+                  .venv/bin/python - <<'PY'
                   import json
                   import os
                   from collections import Counter
                   from pathlib import Path
+
+                  import yaml
 
                   report = json.loads(Path("/tmp/checkov-kubernetes/results_json.json").read_text())
                   results = report.get("results", {})
@@ -136,8 +137,8 @@ jobs:
                   counts = report.get("summary", {})
                   by_check = Counter((item.get("check_id", "unknown"), item.get("check_name", "")) for item in failed)
                   summary = [
-                      "### Kubernetes Checkov baseline (report-only)",
-                      f"Passed: {counts.get('passed', len(passed))} · Failed: {counts.get('failed', len(failed))} · Skipped: {counts.get('skipped', len(skipped))}",
+                      "### Kubernetes Checkov hard gate",
+                      f"Passed: {counts.get('passed', len(passed))} · Failed: {counts.get('failed', len(failed))} · Skipped: {counts.get('skipped', len(skipped))} · Parse errors: {counts.get('parsing_errors', 0)}",
                       "",
                       "| Check | Findings | Policy |",
                       "| --- | ---: | --- |",
@@ -146,6 +147,21 @@ jobs:
                       f"| `{check_id}` | {count} | {name} |"
                       for (check_id, name), count in sorted(by_check.items())
                   )
+                  exceptions = []
+                  for manifest in Path("kubernetes").rglob("*.yaml"):
+                      with manifest.open(encoding="utf-8") as source:
+                          for resource in yaml.safe_load_all(source):
+                              if not isinstance(resource, dict):
+                                  continue
+                              annotations = resource.get("metadata", {}).get("annotations", {})
+                              value = annotations.get("checkov.io/skip") if isinstance(annotations, dict) else None
+                              if value:
+                                  check_id, _, reason = value.partition("=")
+                                  exceptions.append(f"- `{check_id}` — {reason} ({manifest})")
+                  if exceptions:
+                      summary.extend(["", "**Documented exceptions:**", *exceptions])
                   with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
                       output.write("\n".join(summary) + "\n")
+                  if failed or counts.get("parsing_errors", 0):
+                      raise SystemExit("Kubernetes Checkov hard gate failed; resolve findings and parse errors above.")
                   PY

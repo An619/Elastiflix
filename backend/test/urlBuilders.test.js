@@ -1,5 +1,8 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { redisUrl, rabbitmqUrl } from "../src/Backend.js";
 
 const snapshot = { ...process.env };
@@ -30,6 +33,24 @@ describe("redisUrl", () => {
     process.env.REDIS_PASSWORD = "p@ss:word";
     assert.equal(redisUrl(), "redis://:p%40ss%3Aword@redis.infra:6379");
   });
+  it("reads the password from a mounted secret file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "elastiflix-redis-secret-"));
+    const secretPath = join(dir, "redis-password");
+    writeFileSync(secretPath, "p@ss:word\n");
+    process.env.REDIS_HOST = "redis.infra";
+    process.env.REDIS_PASSWORD_FILE = secretPath;
+    try {
+      assert.equal(redisUrl(), "redis://:p%40ss%3Aword@redis.infra:6379");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("does not fall back to a plaintext password when a mounted secret is missing", () => {
+    process.env.REDIS_HOST = "redis.infra";
+    process.env.REDIS_PASSWORD = "must-not-be-used";
+    process.env.REDIS_PASSWORD_FILE = "/missing/redis-password";
+    assert.equal(redisUrl(), "redis://redis.infra:6379");
+  });
 });
 
 describe("rabbitmqUrl", () => {
@@ -49,5 +70,18 @@ describe("rabbitmqUrl", () => {
     process.env.RABBITMQ_USER = "user@corp";
     process.env.RABBITMQ_PASSWORD = "p@ss:word";
     assert.equal(rabbitmqUrl(), "amqp://user%40corp:p%40ss%3Aword@rabbitmq.infra:5672");
+  });
+  it("reads the password from a mounted secret file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "elastiflix-rabbitmq-secret-"));
+    const secretPath = join(dir, "rabbitmq-password");
+    writeFileSync(secretPath, "p@ss:word\n");
+    process.env.RABBITMQ_HOST = "rabbitmq.infra";
+    process.env.RABBITMQ_USER = "user@corp";
+    process.env.RABBITMQ_PASSWORD_FILE = secretPath;
+    try {
+      assert.equal(rabbitmqUrl(), "amqp://user%40corp:p%40ss%3Aword@rabbitmq.infra:5672");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

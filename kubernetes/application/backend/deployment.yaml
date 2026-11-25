@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: backend
   namespace: elastiflix
+  annotations:
+    checkov.io/skip: "CKV_K8S_35=Temporary image-contract compatibility: this pinned image predates Secret-file support; owner @An619, expire 2027-02-22, track in docs/security/phase-2-kubernetes-hardening.md and remove after rebuilding and promoting the backend image."
 spec:
   replicas: 2
   selector:
@@ -13,10 +15,17 @@ spec:
       labels:
         app: backend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
-          image: an619/elastiflix-backend:1dc3d0494ff3b9cd7fcb1c9a8c71c712078a48ce
-          imagePullPolicy: IfNotPresent
+          image: an619/elastiflix-backend:09fe45ac8fabf3242b95f88a79c651bd161b4e29@sha256:06835ad91515135b867e0b180b2f67ac3ba018765790be867c33dfeb4faf0b74
+          imagePullPolicy: Always
           ports:
             - containerPort: 17700
           envFrom:
@@ -25,9 +34,8 @@ spec:
             - secretRef:
                 name: backend-secret
                 optional: true
-          # Passwords come from the Secret; Backend.js builds REDIS_URL /
-          # RABBITMQ_URL from REDIS_PASSWORD / RABBITMQ_PASSWORD when the
-          # full URLs are not set explicitly.
+          # Retain the existing image contract until the phase 2 backend image
+          # with Secret-file support is built and promoted by its digest.
           env:
             - name: REDIS_PASSWORD
               valueFrom:
@@ -50,8 +58,10 @@ spec:
               memory: "512Mi"
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 10001
+            runAsGroup: 10001
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           readinessProbe:

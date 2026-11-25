@@ -2,38 +2,45 @@
 
 ## Scope and guardrails
 
-Phase 1 is merged in PR #4. Phase 2 addresses the Kubernetes hardening debt explicitly tracked in `docker-scans.yml`, `README.md`, and `DEMO.md`: the Kubernetes Checkov scan currently reports findings without blocking CI.
+Phase 1 is merged in PR #4. Phase 2 addresses the Kubernetes Checkov debt previously tracked in `docker-scans.yml`, `README.md`, and `DEMO.md`.
 
-This phase is repository-only. Do not apply manifests, change EKS/Terraform resources, alter AWS account settings, or trigger a GitOps promotion as part of this work. Changes to live Kubernetes manifests must remain in a reviewed PR until the user performs any AWS-side rollout.
+This is repository-only work. Do not apply manifests, change EKS/Terraform resources, alter AWS account settings, or trigger a GitOps promotion. Changes to live Kubernetes manifests remain in a reviewed PR until the user performs any AWS-side rollout.
 
-## Baseline
+## Baseline and current scan
 
-A local Checkov 3.4.10 scan of `kubernetes/` produced 104 report-only findings across six workload manifests:
+A local Checkov 3.4.10 scan of `kubernetes/` initially reported **104 findings**. After the current hardening edits, the scan reports **678 passed, 0 failed, 1 skipped, and 0 parsing errors** across 70 resources. The one exception is deliberately temporary and annotated on the backend Deployment:
 
-| Manifest | Findings |
-| --- | ---: |
-| `kubernetes/infra/infra.yaml` | 32 |
-| `kubernetes/elastic-stack/logstash.yaml` | 19 |
-| `kubernetes/elastic-stack/filebeat.yaml` | 15 |
-| `kubernetes/elastic-stack/kibana.yaml` | 15 |
-| `kubernetes/elastic-stack/elasticsearch.yaml` | 14 |
-| `kubernetes/application/backend/deployment.yaml` | 9 |
-| **Total** | **104** |
+| Check | Workload | Reason | Owner / expiry | Removal condition |
+| --- | --- | --- | --- | --- |
+| `CKV_K8S_35` | `kubernetes/application/backend/deployment.yaml` | The currently pinned backend image predates mounted Secret-file support. Keep the existing Secret-backed environment contract until a rebuilt image is available; application source and tests now support `*_PASSWORD_FILE`. | `@An619` / 2027-02-22 | Rebuild and promote the backend image by immutable digest with mounted Secret files; remove the legacy secret env references and this skip. |
 
-Most frequent findings are mutable/non-digest image references (7), non-`Always` image pull policies (7), pod and container security context gaps (7 each), missing read-only root filesystems (7), low/default UIDs (7), missing seccomp profiles (7), service-account token automount (7), and missing NetworkPolicy coverage (7). Other findings include missing probes, capabilities/privilege-escalation controls, resource requests/limits, and secrets supplied through environment variables.
+The scan is now a CI hard gate for unsuppressed failures and YAML parsing errors; its job summary includes any annotated exceptions. Do not add broad or unowned skips.
 
-## Implementation sequence
+## Hardening delivered in this working tree
 
-1. **Resolve image identity safely.** Use immutable digests for application images from the signed-image publishing workflow and obtain trusted digests for vendor images. Do not invent digests or substitute mutable tags.
-2. **Harden per workload with compatibility checks.** Set pod/container security contexts, seccomp, dropped capabilities, and non-root identities where the image supports them. For read-only root filesystems, explicitly mount writable data, temporary, and log paths; verify Elasticsearch, Kibana, Logstash, Redis, and RabbitMQ paths before changing them. Filebeat's host-log access and UID requirements need separate validation.
-3. **Add probes and resource bounds.** Use meaningful health checks and right-size CPU/memory requests and limits for each workload.
-4. **Design network policy with the cluster dataplane in mind.** Map required ingress/egress among `elastiflix`, `infra`, and `elastic-stack`; verify that EKS network-policy enforcement is actually enabled before relying on NetworkPolicy resources. A default-deny policy without validated allow rules can break production traffic.
-5. **Handle secret delivery intentionally.** Evaluate the backend's password environment-variable contract and secret-volume support before changing it; do not silently change application behavior.
-6. **Make the gate blocking only after evidence.** Keep Checkov report-only while the above work is incomplete. Remove each justified exception or skip with a precise reason, then switch Kubernetes Checkov to fail the job and verify the complete GitHub Actions suite.
+- Pinned the application and vendor image references to candidate OCI digests resolved by the existing read-only workflow. Re-resolve image references if their tags change; never invent digests.
+- Added non-root identities, seccomp `RuntimeDefault`, dropped capabilities, no privilege escalation, and read-only root filesystems to the application, Elastic Stack, Redis, and RabbitMQ workloads. Added explicit writable data/cache/temp/log volumes where those workloads need them.
+- Added resource bounds and health probes, including resource bounds for the Logstash catalogue init container.
+- Added namespace-scoped NetworkPolicies for `elastiflix`, `infra`, and `elastic-stack`, with DNS and required application flows. Logstash's catalogue bootstrap still needs HTTPS egress. Filebeat's Kubernetes API rule assumes private EKS control-plane ENIs in the Terraform private subnets; confirm the actual endpoint/service translation and CNI enforcement behavior before rollout. Keep CIDRs synchronized with `terraform/main.tf`.
+- Disabled automatic service-account token mounting for workloads. Filebeat receives only an explicit projected, short-lived token because its Kubernetes metadata processor requires API access; its read-only RBAC remains scoped to namespaces, pods, and nodes.
+- Added backend support for password files, with tests for successful reads and missing files. Updated Nginx's Kubernetes Service lookup so it no longer uses Docker's `127.0.0.11` resolver.
+
+## Promotion prerequisites and validation limits
+
+- NetworkPolicies are not effective unless the cluster's CNI enforces them. Confirm EKS VPC CNI network-policy support and validate actual ALB, control-plane, pod, service-DNAT, and DNS addresses before enabling these policies in a live cluster. In particular, Filebeat's API allow rule assumes private control-plane ENIs; a public-only EKS API endpoint will not match the private-subnet CIDRs. The manifest CIDRs mirror the VPC public and private subnets in `terraform/main.tf`; they are not a substitute for live topology validation.
+- The current manifest image digests identify existing candidate images, not images built from these uncommitted source edits. Rebuild/publish and re-resolve the frontend/backend digests before promoting their source changes; do not treat a source change as present in an older image.
+- The Logstash init container currently downloads the movie catalogue from GitHub. Its NetworkPolicy permits TCP/443 egress; replace that bootstrap with a pre-baked or internally hosted catalogue before narrowing external egress further.
+- RabbitMQ/Redis SealedSecrets and AWS ExternalSecrets remain cluster-side prerequisites. Nothing was applied or deployed during this phase.
+
+## Verification performed
+
+- Checkov 3.4.10: **678 passed, 0 failed, 1 documented skip, 0 parsing errors**.
+- Backend Node tests: **29 passed, 0 failed**.
+- Frontend Jest tests: **13 passed, 0 failed**; production frontend build succeeded.
+- Kubernetes YAML parsing and `git diff --check` are run as part of final validation. Hosted GitHub checks still need to run against the updated branch.
 
 ## Exit criteria
 
-- All findings are fixed or individually documented with an owner, reason, and expiry; no blanket suppression.
-- `kubeconform` and Checkov pass for the changed manifests; application/container assumptions have targeted tests or validation.
-- Kubernetes Checkov becomes a blocking gate only after the findings are addressed.
-- No manifest is applied and no AWS/GitOps rollout is initiated by this phase.
+- Unsuppressed Checkov findings and YAML parse errors fail CI; the only skip above has an owner, reason, expiry, and removal condition.
+- Review image digests, network-policy flows, secret availability, and the EKS CNI prerequisite before any promotion.
+- Do not apply manifests or initiate an AWS/GitOps rollout as part of this work.

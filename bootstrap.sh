@@ -7,12 +7,10 @@ echo "🚀 1. Starting Minikube..."
 minikube start --cpus=4 --memory=7500 --disk-size=30g
 minikube addons enable ingress
 
-echo "🐳 2. Loading Docker images into Minikube..."
-# Load local images to avoid Docker Hub rate limits and errors
-minikube image load an619/elastiflix-frontend:latest || true
-minikube image load an619/elastiflix-backend:latest || true
-minikube image load an619/elastiflix-frontend:v0.1.0 || true
-minikube image load an619/elastiflix-backend:v0.1.0 || true
+echo "🐳 2. Preparing application images..."
+# The Kubernetes workloads use immutable Docker Hub digests, not these legacy
+# mutable tags. Argo CD will pull the exact manifest references; don't mask
+# failed local image loads for tags that may not exist in the Docker daemon.
 
 echo "📦 3. Installing Argo CD..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
@@ -47,8 +45,10 @@ echo "🔑 7c. Creating local Secrets for Minikube (no ESO / AWS on this cluster
 # sealed against a different cluster's key and cannot decrypt here, so
 # create plain Secrets locally. Override via env vars if needed:
 #   REDIS_PASSWORD=... RABBITMQ_PASSWORD=... ./bootstrap.sh
-kubectl create namespace infra --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace elastiflix --dry-run=client -o yaml | kubectl apply -f -
+# Create project namespaces with their Pod Security Admission labels before
+# workloads or secrets are created. elastiflix/infra enforce the restricted
+# profile; namespaces with third-party chart or hostPath workloads only warn.
+kubectl apply -f kubernetes/namespaces/namespaces.yaml
 kubectl create secret generic redis-secret -n infra \
   --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
   --dry-run=client -o yaml | kubectl apply -f -

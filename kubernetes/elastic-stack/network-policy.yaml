@@ -1,5 +1,6 @@
 # NetworkPolicy enforcement requires EKS VPC CNI network-policy support to be
-# enabled by the cluster owner before these manifests are promoted.
+# enabled by the cluster owner before these manifests are promoted. Existing
+# workload-specific policies below explicitly permit the required traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -9,6 +10,7 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

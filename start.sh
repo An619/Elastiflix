@@ -79,7 +79,14 @@ echo "    $EXPECTED movies indexed"
 # and without it Kibana rejects the data view outright.
 data_view() {
   local id="$1" title="$2" timefield="$3" name="$4"
-  curl -s -X DELETE "$KB/api/data_views/data_view/$id" -H 'kbn-xsrf: true' >/dev/null 2>&1 || true
+  local delete_status
+  delete_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X DELETE "$KB/api/data_views/data_view/$id" \
+    -H 'kbn-xsrf: true')
+  case "$delete_status" in
+    200|204|404) ;; # A missing data view is the expected idempotent case.
+    *) echo "ERROR: deleting data view '$id' returned HTTP $delete_status" >&2; return 1 ;;
+  esac
   curl -fs -X POST "$KB/api/data_views/data_view" \
     -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
     -d "{\"data_view\":{\"id\":\"$id\",\"title\":\"$title\",\"timeFieldName\":\"$timefield\",\"name\":\"$name\",\"allowNoIndex\":true}}" \
@@ -99,7 +106,7 @@ data_view "elastiflix-metrics" "metricbeat-*"      "@timestamp"   "Elastiflix Me
 # still build one live on camera -- these are the safety net, and the "here is
 # where we are going" shot before you start.
 echo "==> Loading the prebuilt dashboards"
-./load-dashboards.sh | grep -v '^==>' || true
+./load-dashboards.sh
 
 cat <<EOF
 

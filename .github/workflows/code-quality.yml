@@ -7,18 +7,18 @@ jobs:
         steps:
             - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
             - name: Lint Frontend Dockerfile
-              uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+              uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
               with:
                   dockerfile: frontend/Dockerfile.prod
             - name: Lint Backend Dockerfile
-              uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+              uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
               with:
                   dockerfile: backend/Dockerfile.prod
             - name: Lint Frontend Dev Dockerfile
-              uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+              uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
               with:
                   dockerfile: frontend/Dockerfile
             - name: Lint Backend Dev Dockerfile
-              uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+              uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
               with:
                   dockerfile: backend/Dockerfile

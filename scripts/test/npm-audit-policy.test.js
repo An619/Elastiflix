@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateAuditReport } from "../npm-audit-policy.js";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { evaluateAuditReport, runAuditPolicy } from "../npm-audit-policy.js";
 
 const today = "2026-11-24";
 const policyBase = {
@@ -37,6 +40,20 @@ const report = {
     },
   },
 };
+
+function makeFixture() {
+  const rootDir = mkdtempSync(join(tmpdir(), "npm-audit-policy-"));
+  mkdirSync(join(rootDir, "frontend"), { recursive: true });
+  mkdirSync(join(rootDir, "security"), { recursive: true });
+  writeFileSync(join(rootDir, "frontend", "package-lock.json"), JSON.stringify(lock));
+  writeFileSync(join(rootDir, "security", "vulnerability-exceptions.json"), JSON.stringify(policyBase));
+  return rootDir;
+}
+
+function makeLogger() {
+  const messages = [];
+  return { messages, log: (message) => messages.push(message), error: (message) => messages.push(message) };
+}
 
 test("accepts an exact, unexpired, development-only exception", () => {
   const result = evaluateAuditReport({ project: "frontend", report, lock, policy: policyBase, today });
@@ -115,4 +132,111 @@ test("fails closed when a high finding has no exact lockfile path", () => {
   missingPath.vulnerabilities["old-build-lib"].nodes = [];
   const result = evaluateAuditReport({ project: "frontend", report: missingPath, lock, policy: policyBase, today });
   assert.ok(result.errors.some((message) => message.includes("exact package-lock path")));
+});
+
+test("CLI policy runner rejects unsupported projects and missing npm CLI paths", () => {
+  const logger = makeLogger();
+  assert.equal(runAuditPolicy("other", { logger }), 2);
+  const rootDir = makeFixture();
+  try {
+    assert.equal(runAuditPolicy("frontend", { rootDir, npmExecPath: "", logger }), 2);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.ok(logger.messages.some((message) => message.includes("npm exec")));
+});
+
+test("CLI policy runner fails closed when policy files are unreadable", () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "npm-audit-policy-missing-"));
+  const logger = makeLogger();
+  try {
+    assert.equal(runAuditPolicy("frontend", { rootDir, npmExecPath: "/trusted/npm-cli.js", logger }), 2);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.ok(logger.messages.some((message) => message.includes("Unable to read")));
+});
+
+test("CLI policy runner fails closed when npm cannot be launched", () => {
+  const rootDir = makeFixture();
+  const logger = makeLogger();
+  try {
+    const exitCode = runAuditPolicy("frontend", {
+      rootDir,
+      npmExecPath: "/trusted/npm-cli.js",
+      spawn: () => ({ error: new Error("spawn failed") }),
+      logger,
+    });
+    assert.equal(exitCode, 2);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.ok(logger.messages.some((message) => message.includes("spawn failed")));
+});
+
+test("CLI policy runner rejects npm output that is not JSON", () => {
+  const rootDir = makeFixture();
+  const logger = makeLogger();
+  try {
+    const exitCode = runAuditPolicy("frontend", {
+      rootDir,
+      npmExecPath: "/trusted/npm-cli.js",
+      spawn: () => ({ status: 1, stdout: "not-json", stderr: "audit unavailable" }),
+      logger,
+    });
+    assert.equal(exitCode, 2);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.ok(logger.messages.some((message) => message.includes("not a passing scan")));
+  assert.ok(logger.messages.some((message) => message.includes("audit unavailable")));
+});
+
+test("CLI policy runner invokes npm by explicit CLI path and accepts a matching exception", () => {
+  const rootDir = makeFixture();
+  const logger = makeLogger();
+  let invocation;
+  try {
+    const exitCode = runAuditPolicy("frontend", {
+      rootDir,
+      npmExecPath: "/trusted/npm-cli.js",
+      spawn: (...args) => {
+        invocation = args;
+        return { status: 1, stdout: JSON.stringify(report), stderr: "" };
+      },
+      logger,
+    });
+    assert.equal(exitCode, 0);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.equal(invocation[0], process.execPath);
+  assert.deepEqual(invocation[1], ["/trusted/npm-cli.js", "audit", "--json"]);
+  assert.ok(logger.messages.some((message) => message.includes("Policy check passed")));
+});
+
+test("CLI policy runner fails on a high-severity finding without an exact exception", () => {
+  const rootDir = makeFixture();
+  const logger = makeLogger();
+  const changed = structuredClone(report);
+  changed.vulnerabilities["new-lib"] = {
+    severity: "high",
+    nodes: ["node_modules/new-lib"],
+    via: [{ source: 5678, severity: "high" }],
+  };
+  const changedLock = structuredClone(lock);
+  changedLock.packages["node_modules/new-lib"] = { version: "4.5.6", dev: true };
+  writeFileSync(join(rootDir, "frontend", "package-lock.json"), JSON.stringify(changedLock));
+  try {
+    const exitCode = runAuditPolicy("frontend", {
+      rootDir,
+      npmExecPath: "/trusted/npm-cli.js",
+      spawn: () => ({ status: 1, stdout: JSON.stringify(changed), stderr: "" }),
+      logger,
+    });
+    assert.equal(exitCode, 1);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+  assert.ok(logger.messages.some((message) => message.includes("POLICY FAILURE")));
 });

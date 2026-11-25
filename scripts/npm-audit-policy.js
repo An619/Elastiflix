@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { resolve, relative } from "node:path";
+import { isAbsolute, resolve, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -13,7 +13,7 @@ function normalizeVia(via = []) {
       return `advisory:${entry.source}`;
     }
     return `unknown:${JSON.stringify(entry)}`;
-  }).sort();
+  }).sort((left, right) => left.localeCompare(right));
 }
 
 function lockScope(lock, nodePath) {
@@ -23,7 +23,10 @@ function lockScope(lock, nodePath) {
 }
 
 function sameArray(a = [], b = []) {
-  return a.length === b.length && [...a].sort().every((value, index) => value === [...b].sort()[index]);
+  const sortValues = (values) => [...values].sort((left, right) => left.localeCompare(right));
+  const sortedA = sortValues(a);
+  const sortedB = sortValues(b);
+  return sortedA.length === sortedB.length && sortedA.every((value, index) => value === sortedB[index]);
 }
 
 function isIsoDate(value) {
@@ -143,16 +146,23 @@ export function evaluateAuditReport({ project, report, lock, policy, today = new
   return { errors, findings };
 }
 
-function main() {
-  const project = process.argv[2];
+export function runAuditPolicy(project, {
+  rootDir = repoRoot,
+  npmExecPath = process.env.npm_execpath,
+  spawn = spawnSync,
+  logger = console,
+} = {}) {
   if (!project || !["frontend", "backend"].includes(project)) {
-    console.error("Usage: node scripts/npm-audit-policy.js <frontend|backend>");
-    process.exitCode = 2;
-    return;
+    logger.error("Usage: npm exec -- node scripts/npm-audit-policy.js <frontend|backend>");
+    return 2;
+  }
+  if (typeof npmExecPath !== "string" || !isAbsolute(npmExecPath)) {
+    logger.error("npm audit could not run: invoke this checker through npm exec so its npm CLI path is explicit.");
+    return 2;
   }
 
-  const projectDir = resolve(repoRoot, project);
-  const policyPath = resolve(repoRoot, "security/vulnerability-exceptions.json");
+  const projectDir = resolve(rootDir, project);
+  const policyPath = resolve(rootDir, "security/vulnerability-exceptions.json");
   const lockPath = resolve(projectDir, "package-lock.json");
   let policy;
   let lock;
@@ -160,46 +170,51 @@ function main() {
     policy = JSON.parse(readFileSync(policyPath, "utf8"));
     lock = JSON.parse(readFileSync(lockPath, "utf8"));
   } catch (error) {
-    console.error(`Unable to read audit policy or lockfile: ${error.message}`);
-    process.exitCode = 2;
-    return;
+    logger.error(`Unable to read audit policy or lockfile: ${error.message}`);
+    return 2;
   }
 
-  const result = spawnSync("npm", ["audit", "--json"], { cwd: projectDir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  const result = spawn(process.execPath, [npmExecPath, "audit", "--json"], {
+    cwd: projectDir,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
   if (result.error) {
-    console.error(`npm audit could not run: ${result.error.message}`);
-    process.exitCode = 2;
-    return;
+    logger.error(`npm audit could not run: ${result.error.message}`);
+    return 2;
   }
-  if (result.stderr?.trim()) process.stderr.write(result.stderr);
+  if (result.stderr?.trim()) logger.error(result.stderr);
 
   let report;
   try {
     report = JSON.parse(result.stdout);
   } catch {
-    console.error(`npm audit returned no parseable JSON (exit ${result.status ?? "unknown"}); this is not a passing scan.`);
-    if (result.stdout?.trim()) process.stderr.write(result.stdout);
-    process.exitCode = 2;
-    return;
+    logger.error(`npm audit returned no parseable JSON (exit ${result.status ?? "unknown"}); this is not a passing scan.`);
+    if (result.stdout?.trim()) logger.error(result.stdout);
+    return 2;
   }
 
   const evaluated = evaluateAuditReport({ project, report, lock, policy });
   const counts = report.metadata?.vulnerabilities || {};
-  console.log(`${project}: npm audit findings ${JSON.stringify(counts)}`);
+  logger.log(`${project}: npm audit findings ${JSON.stringify(counts)}`);
   for (const finding of evaluated.findings) {
-    console.log(`reported ${finding.severity}: ${finding.package}@${finding.version} (${finding.scope}) via ${finding.via.join(", ") || "unknown"}`);
+    logger.log(`reported ${finding.severity}: ${finding.package}@${finding.version} (${finding.scope}) via ${finding.via.join(", ") || "unknown"}`);
   }
 
-  const rootRelative = relative(repoRoot, policyPath);
+  const rootRelative = relative(rootDir, policyPath);
   if (evaluated.errors.length) {
-    evaluated.errors.forEach((error) => console.error(`POLICY FAILURE: ${error}`));
-    console.error(`See ${rootRelative} and ${policy.trackingDocument} for approved, time-bound exceptions.`);
-    process.exitCode = 1;
-    return;
+    evaluated.errors.forEach((error) => logger.error(`POLICY FAILURE: ${error}`));
+    logger.error(`See ${rootRelative} and ${policy.trackingDocument} for approved, time-bound exceptions.`);
+    return 1;
   }
 
   const accepted = evaluated.findings.filter((finding) => finding.severity === "high" || finding.severity === "critical");
-  console.log(`Policy check passed: ${accepted.length} exact, time-bound development-only HIGH/CRITICAL finding(s) are recorded; no unexcepted HIGH/CRITICAL finding remains.`);
+  logger.log(`Policy check passed: ${accepted.length} exact, time-bound development-only HIGH/CRITICAL finding(s) are recorded; no unexcepted HIGH/CRITICAL finding remains.`);
+  return 0;
+}
+
+function main() {
+  process.exitCode = runAuditPolicy(process.argv[2]);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

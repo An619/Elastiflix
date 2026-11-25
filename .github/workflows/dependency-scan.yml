@@ -13,9 +13,9 @@ jobs:
             - name: Test npm audit exception policy
               run: node --test scripts/test/npm-audit-policy.test.js
             - name: Full frontend audit with exact, expiring exceptions
-              run: node scripts/npm-audit-policy.js frontend
+              run: npm exec -- node scripts/npm-audit-policy.js frontend
             - name: Ensure backend audit has no unexcepted or stale policy entries
-              run: node scripts/npm-audit-policy.js backend
+              run: npm exec -- node scripts/npm-audit-policy.js backend
             - name: Audit Backend
               run: |
                   cd backend
@@ -28,5 +28,5 @@ jobs:
                   npm audit --omit=dev --audit-level=high
             - name: Audit Python Dependencies
               run: |
-                  python3 -m pip install --disable-pip-version-check --no-input pip-audit==2.10.1
+                  python3 -m pip install --disable-pip-version-check --no-input --only-binary=:all: pip-audit==2.10.1
                   pip-audit -r data-loader/pip-requirements.txt

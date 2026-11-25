@@ -41,8 +41,8 @@ npm_audit:
   image: node:22-alpine
   script:
     - node --test scripts/test/npm-audit-policy.test.js
-    - node scripts/npm-audit-policy.js frontend
-    - node scripts/npm-audit-policy.js backend
+    - npm exec -- node scripts/npm-audit-policy.js frontend
+    - npm exec -- node scripts/npm-audit-policy.js backend
     - npm audit --omit=dev --audit-level=high --prefix frontend
     - npm audit --audit-level=high --prefix backend
 
@@ -50,7 +50,7 @@ pip_audit:
   stage: security
   image: python:3.11-slim
   script:
-    - python3 -m pip install --disable-pip-version-check --no-input pip-audit==2.10.1
+    - python3 -m pip install --disable-pip-version-check --no-input --only-binary=:all: pip-audit==2.10.1
     - pip-audit -r data-loader/pip-requirements.txt
 
 trivy_scan:

@@ -16,7 +16,7 @@ jobs:
                       backend/package-lock.json
             - name: Install actionlint
               run: |
-                  curl -fsSL --retry 3 --retry-all-errors \
+                  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
                     -o /tmp/actionlint.tar.gz \
                     https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
                   echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check
@@ -60,7 +60,7 @@ jobs:
               run: terraform -chdir=terraform validate
             - name: Validate Kubernetes Manifests
               run: |
-                  curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
+                  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
                   # Unknown custom-resource schemas (e.g. Argo Rollouts / ESO) are
                   # explicitly reported as skipped; built-in Kubernetes schemas
                   # remain strict and any validation error fails this job.

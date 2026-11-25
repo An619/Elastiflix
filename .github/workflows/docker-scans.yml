@@ -85,10 +85,37 @@ jobs:
             # and cannot be expressed as a commit hash.
             - name: Checkov Terraform Scan
               run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
-            # Kubernetes scan is report-only for now: the raw scan reports
-            # 104 findings in the local Checkov 3.4.10 validation (including
-            # digest pinning, seccomp profiles, and runtime hardening).
-            # Keep these findings visible as tracked hardening debt; make the
-            # Kubernetes scan blocking after the remediation pass is complete.
+            # Kubernetes scan remains report-only until the manifest-hardening
+            # pass is complete. Preserve machine-readable results and summarize
+            # remaining debt in the job summary for each run.
             - name: Checkov Kubernetes Scan (report-only)
-              run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail
+              run: |
+                  .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail \
+                    --output json --output-file-path /tmp/checkov-kubernetes
+                  python3 - <<'PY'
+                  import json
+                  import os
+                  from collections import Counter
+                  from pathlib import Path
+
+                  report = json.loads(Path("/tmp/checkov-kubernetes/results_json.json").read_text())
+                  results = report.get("results", {})
+                  failed = results.get("failed_checks", [])
+                  passed = results.get("passed_checks", [])
+                  skipped = results.get("skipped_checks", [])
+                  counts = report.get("summary", {})
+                  by_check = Counter((item.get("check_id", "unknown"), item.get("check_name", "")) for item in failed)
+                  summary = [
+                      "### Kubernetes Checkov baseline (report-only)",
+                      f"Passed: {counts.get('passed', len(passed))} · Failed: {counts.get('failed', len(failed))} · Skipped: {counts.get('skipped', len(skipped))}",
+                      "",
+                      "| Check | Findings | Policy |",
+                      "| --- | ---: | --- |",
+                  ]
+                  summary.extend(
+                      f"| `{check_id}` | {count} | {name} |"
+                      for (check_id, name), count in sorted(by_check.items())
+                  )
+                  with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+                      output.write("\n".join(summary) + "\n")
+                  PY

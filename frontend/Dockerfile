@@ -4,8 +4,8 @@ WORKDIR /app
 
 COPY package*.json ./
 
-# Install deps and refresh browserslist db in one layer (DL3059)
-RUN npm ci --legacy-peer-deps && npx update-browserslist-db@1.4.0
+# Install dependencies (single layer, per hadolint DL3059)
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 

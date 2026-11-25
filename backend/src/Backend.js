@@ -20,8 +20,6 @@ if (process.env.LOCAL) {
         `http://${publicHost}:3000`,
         `http://${publicHost}`,
         "http://localhost:3000",
-        "http://elastiflix.local",
-        "http://api.elastiflix.local",
       ],
       credentials: true,
     })

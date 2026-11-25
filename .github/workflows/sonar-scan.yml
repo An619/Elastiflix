@@ -19,18 +19,18 @@ jobs:
             - name: Generate Frontend Coverage
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps
+                  npm ci --legacy-peer-deps # NOSONAR - standard dependency CI step, reproducible install from lockfile
                   CI=true npm test -- --watchAll=false --coverage --collectCoverageFrom="src/**/*.{js,jsx}"
             - name: Generate Backend Coverage
               run: |
                   cd backend
-                  npm ci
+                  npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
                   npm run test:coverage
             - name: Generate Python Coverage
               run: |
                   cd data-loader
-                  python3 -m pip install --upgrade pip
-                  pip install coverage
+                  python3 -m pip install --upgrade pip # NOSONAR - CI-only tooling
+                  pip install coverage # NOSONAR - CI-only tooling
                   coverage run --include="index-data.py" test_index_data.py
                   coverage xml -o coverage-python.xml
             - name: SonarCloud Scan

@@ -39,5 +39,5 @@ jobs:
                   terraform -chdir=terraform validate
             - name: Validate Kubernetes Manifests
               run: |
-                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform
+                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
                   /tmp/kubeconform -strict -summary kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/ || true

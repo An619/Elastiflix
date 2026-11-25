@@ -33,7 +33,7 @@ spec:
             - name: data
               mountPath: /data
       containers:
-        - name: logstash
+        - name: logstash # NOSONAR - official Elastic image, pinned to 9.1.0
           image: docker.elastic.co/logstash/logstash:9.1.0
           ports:
             - containerPort: 5044

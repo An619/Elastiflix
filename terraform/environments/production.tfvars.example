@@ -1,0 +1,9 @@
+aws_region   = "us-east-2"
+cluster_name = "elastiflix-production"
+environment  = "production"
+
+# Keep the EKS API private; reach it from an approved administrative path.
+cluster_endpoint_public_access_cidrs = []
+
+# Required: set cluster_version only after checking EKS support, the pinned
+# EKS module version, and the selected managed add-on versions.

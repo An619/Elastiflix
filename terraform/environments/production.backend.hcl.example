@@ -1,0 +1,5 @@
+bucket         = "REPLACE_WITH_BOOTSTRAPPED_STATE_BUCKET"
+key            = "elastiflix/production/terraform.tfstate"
+region         = "us-east-2"
+dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE"
+encrypt        = true

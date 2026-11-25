@@ -1,0 +1,10 @@
+aws_region   = "us-east-2"
+cluster_name = "elastiflix"
+environment  = "dev"
+
+# Private EKS API by default. Add only a verified administrator public /32
+# or a similarly narrow IPv4 CIDR if temporary public endpoint access is needed.
+cluster_endpoint_public_access_cidrs = []
+
+# Required: set cluster_version only after checking EKS support, the pinned
+# EKS module version, and the selected managed add-on versions.

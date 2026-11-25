@@ -41,8 +41,8 @@ npm_audit:
   image: node:22-alpine
   script:
     - node --test scripts/test/npm-audit-policy.test.js
-    - npm exec -- node scripts/npm-audit-policy.js frontend
-    - npm exec -- node scripts/npm-audit-policy.js backend
+    - npm --prefix backend run audit:policy -- frontend
+    - npm --prefix backend run audit:policy -- backend
     - npm audit --omit=dev --audit-level=high --prefix frontend
     - npm audit --audit-level=high --prefix backend
 

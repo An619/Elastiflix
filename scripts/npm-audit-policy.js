@@ -153,7 +153,7 @@ export function runAuditPolicy(project, {
   logger = console,
 } = {}) {
   if (!project || !["frontend", "backend"].includes(project)) {
-    logger.error("Usage: npm exec -- node scripts/npm-audit-policy.js <frontend|backend>");
+    logger.error("Usage: npm --prefix backend run audit:policy -- <frontend|backend>");
     return 2;
   }
   if (typeof npmExecPath !== "string" || !isAbsolute(npmExecPath)) {

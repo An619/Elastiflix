@@ -13,9 +13,9 @@ jobs:
             - name: Test npm audit exception policy
               run: node --test scripts/test/npm-audit-policy.test.js
             - name: Full frontend audit with exact, expiring exceptions
-              run: npm exec -- node scripts/npm-audit-policy.js frontend
+              run: npm --prefix backend run audit:policy -- frontend
             - name: Ensure backend audit has no unexcepted or stale policy entries
-              run: npm exec -- node scripts/npm-audit-policy.js backend
+              run: npm --prefix backend run audit:policy -- backend
             - name: Audit Backend
               run: |
                   cd backend

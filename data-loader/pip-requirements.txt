@@ -3,4 +3,4 @@
 # loader could not run as published. Bumped to a 9.x client, and added tqdm,
 # which the script imports but upstream never declared.
 elasticsearch==9.1.0
-tqdm==4.67.1
+tqdm==4.70.1

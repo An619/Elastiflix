@@ -85,6 +85,36 @@ jobs:
             # and cannot be expressed as a commit hash.
             - name: Checkov Terraform Scan
               run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
+            - name: Set up Buildx for image digest resolution
+              uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+            - name: Resolve candidate Kubernetes image digests (read-only)
+              run: |
+                  images=(
+                    an619/elastiflix-backend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
+                    an619/elastiflix-frontend:09fe45ac8fabf3242b95f88a79c651bd161b4e29
+                    docker.elastic.co/elasticsearch/elasticsearch:9.1.0
+                    docker.elastic.co/kibana/kibana:9.1.0
+                    docker.elastic.co/logstash/logstash:9.1.0
+                    docker.elastic.co/beats/filebeat:9.1.0
+                    python:3.12-alpine
+                    redis:7-alpine
+                    rabbitmq:3-management-alpine
+                  )
+                  summary_file="$(mktemp)"
+                  for image in "${images[@]}"; do
+                    digest="$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')"
+                    if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                      echo "Unable to resolve an OCI digest for $image" >&2
+                      exit 1
+                    fi
+                    reference="${image%:*}@${digest}"
+                    printf '%s\n' "- \`$reference\`" >> "$summary_file"
+                    echo "::notice title=Resolved immutable image::$reference"
+                  done
+                  {
+                    echo "### Candidate immutable Kubernetes image references"
+                    cat "$summary_file"
+                  } >> "$GITHUB_STEP_SUMMARY"
             # Kubernetes scan remains report-only until the manifest-hardening
             # pass is complete. Preserve machine-readable results and summarize
             # remaining debt in the job summary for each run.

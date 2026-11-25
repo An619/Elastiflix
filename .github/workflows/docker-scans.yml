@@ -28,24 +28,24 @@ jobs:
                   ignore-unfixed: true
                   severity: "CRITICAL,HIGH"
 
-    checkov-terraform-scan:
+    checkov-iac-scan:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-            - name: Checkov IaC Scan
-              uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
-              with:
-                  directory: terraform/
-                  framework: terraform
-                  soft_fail: false
-            - name: Checkov Kubernetes Scan
-              # NOTE: report-only (soft_fail) for now. The raw scan reports
-              # ~105 findings (digest pinning, seccompProfile, root-run beats)
-              # on manifests that cannot be fixed or verified without a
-              # cluster + registry access. Track as tech debt; flip to false
-              # once the manifest hardening pass lands.
-              uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
-              with:
-                  directory: kubernetes/
-                  framework: kubernetes
-                  soft_fail: true
+            - name: Setup Checkov
+              run: |
+                  python3 -m venv .venv
+                  .venv/bin/pip install --quiet checkov==3.4.10
+            # Terraform gate stays hard. CKV_TF_1 (module sources must be
+            # commit-pinned) is skipped because the registry modules here
+            # are already version-pinned, which is the registry convention
+            # and cannot be expressed as a commit hash.
+            - name: Checkov Terraform Scan
+              run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
+            # Kubernetes scan is report-only for now: the raw scan reports
+            # ~105 findings (digest pinning, seccomp profiles, root-run
+            # beats) on manifests that cannot be fixed/verified without a
+            # cluster + registry. Track as tech debt; drop --soft-fail once
+            # the manifest hardening pass lands.
+            - name: Checkov Kubernetes Scan (report-only)
+              run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail

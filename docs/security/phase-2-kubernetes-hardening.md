@@ -23,7 +23,8 @@ The scan is now a CI hard gate for unsuppressed failures and YAML parsing errors
 - Added resource bounds and health probes, including resource bounds for the Logstash catalogue init container.
 - Added namespace-scoped NetworkPolicies for `elastiflix`, `infra`, and `elastic-stack`, with DNS and required application flows. Logstash's catalogue bootstrap still needs HTTPS egress. Filebeat's Kubernetes API rule assumes private EKS control-plane ENIs in the Terraform private subnets; confirm the actual endpoint/service translation and CNI enforcement behavior before rollout. Keep CIDRs synchronized with `terraform/main.tf`.
 - Disabled automatic service-account token mounting for workloads. Filebeat receives only an explicit projected, short-lived token because its Kubernetes metadata processor requires API access; its read-only RBAC remains scoped to namespaces, pods, and nodes.
-- Added backend support for password files, with tests for successful reads and missing files. Updated Nginx's Kubernetes Service lookup so it no longer uses Docker's `127.0.0.11` resolver.
+- Added backend support for password files restricted to two fixed Secret mount paths, with tests for successful reads, missing files, and rejection of arbitrary paths. Updated Nginx's Kubernetes Service lookup so it no longer uses Docker's `127.0.0.11` resolver.
+- Added ephemeral-storage requests and limits to Kibana and Filebeat after SonarCloud flagged missing storage bounds.
 
 ## Promotion prerequisites and validation limits
 

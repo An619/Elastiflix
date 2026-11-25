@@ -1,8 +1,5 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { redisUrl, rabbitmqUrl } from "../src/Backend.js";
 
 const snapshot = { ...process.env };
@@ -33,23 +30,34 @@ describe("redisUrl", () => {
     process.env.REDIS_PASSWORD = "p@ss:word";
     assert.equal(redisUrl(), "redis://:p%40ss%3Aword@redis.infra:6379");
   });
-  it("reads the password from a mounted secret file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "elastiflix-redis-secret-"));
-    const secretPath = join(dir, "redis-password");
-    writeFileSync(secretPath, "p@ss:word\n");
+  it("reads the password from the allowlisted mounted secret file", () => {
     process.env.REDIS_HOST = "redis.infra";
-    process.env.REDIS_PASSWORD_FILE = secretPath;
-    try {
-      assert.equal(redisUrl(), "redis://:p%40ss%3Aword@redis.infra:6379");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    process.env.REDIS_PASSWORD_FILE = "/run/secrets/elastiflix/redis-password";
+    const readSecretFile = (path, encoding) => {
+      assert.equal(path, process.env.REDIS_PASSWORD_FILE);
+      assert.equal(encoding, "utf8");
+      return "p@ss:word\n";
+    };
+    assert.equal(redisUrl(readSecretFile), "redis://:p%40ss%3Aword@redis.infra:6379");
   });
-  it("does not fall back to a plaintext password when a mounted secret is missing", () => {
+  it("rejects arbitrary secret file paths and does not fall back to plaintext", () => {
     process.env.REDIS_HOST = "redis.infra";
     process.env.REDIS_PASSWORD = "must-not-be-used";
-    process.env.REDIS_PASSWORD_FILE = "/missing/redis-password";
-    assert.equal(redisUrl(), "redis://redis.infra:6379");
+    process.env.REDIS_PASSWORD_FILE = "/etc/passwd";
+    let readAttempted = false;
+    assert.equal(redisUrl(() => { readAttempted = true; }), "redis://redis.infra:6379");
+    assert.equal(readAttempted, false);
+  });
+  it("does not fall back to a plaintext password when the mounted secret is missing", () => {
+    process.env.REDIS_HOST = "redis.infra";
+    process.env.REDIS_PASSWORD = "must-not-be-used";
+    process.env.REDIS_PASSWORD_FILE = "/run/secrets/elastiflix/redis-password";
+    const readSecretFile = () => {
+      const error = new Error("missing secret file");
+      error.code = "ENOENT";
+      throw error;
+    };
+    assert.equal(redisUrl(readSecretFile), "redis://redis.infra:6379");
   });
 });
 
@@ -71,17 +79,15 @@ describe("rabbitmqUrl", () => {
     process.env.RABBITMQ_PASSWORD = "p@ss:word";
     assert.equal(rabbitmqUrl(), "amqp://user%40corp:p%40ss%3Aword@rabbitmq.infra:5672");
   });
-  it("reads the password from a mounted secret file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "elastiflix-rabbitmq-secret-"));
-    const secretPath = join(dir, "rabbitmq-password");
-    writeFileSync(secretPath, "p@ss:word\n");
+  it("reads the password from the allowlisted mounted secret file", () => {
     process.env.RABBITMQ_HOST = "rabbitmq.infra";
     process.env.RABBITMQ_USER = "user@corp";
-    process.env.RABBITMQ_PASSWORD_FILE = secretPath;
-    try {
-      assert.equal(rabbitmqUrl(), "amqp://user%40corp:p%40ss%3Aword@rabbitmq.infra:5672");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    process.env.RABBITMQ_PASSWORD_FILE = "/run/secrets/elastiflix/rabbitmq-password";
+    const readSecretFile = (path, encoding) => {
+      assert.equal(path, process.env.RABBITMQ_PASSWORD_FILE);
+      assert.equal(encoding, "utf8");
+      return "p@ss:word\n";
+    };
+    assert.equal(rabbitmqUrl(readSecretFile), "amqp://user%40corp:p%40ss%3Aword@rabbitmq.infra:5672");
   });
 });

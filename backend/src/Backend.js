@@ -28,12 +28,21 @@ if (process.env.LOCAL) {
 }
 app.use(express.json());
 
-// --- URL helpers: support Kubernetes Secret volumes as well as local envs ---
-function secretValue(name) {
-  const secretPath = process.env[`${name}_FILE`];
-  if (secretPath) {
+// --- URL helpers: support allowlisted Kubernetes Secret paths or local envs ---
+const SECRET_FILE_PATHS = Object.freeze({
+  REDIS_PASSWORD: "/run/secrets/elastiflix/redis-password",
+  RABBITMQ_PASSWORD: "/run/secrets/elastiflix/rabbitmq-password",
+});
+
+function secretValue(name, readSecretFile = readFileSync) {
+  const configuredPath = process.env[`${name}_FILE`];
+  const allowedPath = SECRET_FILE_PATHS[name];
+  if (configuredPath) {
+    // Do not let a deployment environment variable turn this into an
+    // arbitrary file read; secret mounts have fixed, documented paths.
+    if (!allowedPath || configuredPath !== allowedPath) return undefined;
     try {
-      return readFileSync(secretPath, "utf8").replace(/\r?\n$/, "");
+      return readSecretFile(allowedPath, "utf8").replace(/\r?\n$/, "");
     } catch (error) {
       if (error.code === "ENOENT") return undefined;
       throw error;
@@ -42,22 +51,22 @@ function secretValue(name) {
   return process.env[name];
 }
 
-function redisUrl() {
+function redisUrl(readSecretFile) {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
   const host = process.env.REDIS_HOST;
   if (!host) return undefined;
   const port = process.env.REDIS_PORT || "6379";
-  const pass = secretValue("REDIS_PASSWORD");
+  const pass = secretValue("REDIS_PASSWORD", readSecretFile);
   return pass ? `redis://:${encodeURIComponent(pass)}@${host}:${port}` : `redis://${host}:${port}`;
 }
 
-function rabbitmqUrl() {
+function rabbitmqUrl(readSecretFile) {
   if (process.env.RABBITMQ_URL) return process.env.RABBITMQ_URL;
   const host = process.env.RABBITMQ_HOST;
   if (!host) return undefined;
   const port = process.env.RABBITMQ_PORT || "5672";
   const user = process.env.RABBITMQ_USER || "user";
-  const pass = secretValue("RABBITMQ_PASSWORD");
+  const pass = secretValue("RABBITMQ_PASSWORD", readSecretFile);
   return pass
     ? `amqp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`
     : `amqp://${encodeURIComponent(user)}@${host}:${port}`;

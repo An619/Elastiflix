@@ -2,46 +2,40 @@
 
 ## Scope and guardrails
 
-Phase 1 is merged in PR #4. Phase 2 addresses the Kubernetes Checkov debt previously tracked in `docker-scans.yml`, `README.md`, and `DEMO.md`.
+Phase 1 is merged in PR #4. Phase 2 hardens the Kubernetes manifests and promotes app images built from the hardened source. No AWS cluster was created or started as part of this work. No `kubectl apply` or manual GitOps sync was performed.
 
-This is repository-only work. Do not apply manifests, change EKS/Terraform resources, alter AWS account settings, or trigger a GitOps promotion. Changes to live Kubernetes manifests remain in a reviewed PR until the user performs any AWS-side rollout.
+PR #26 merged the workload and policy hardening. Its main-branch pipeline built and published the application images, generated SBOM/provenance, and signed/verified both image digests. PR #27 is the follow-up manifest promotion using those exact digests. A merge does not create/start EKS; if a cluster already exists and Argo CD is connected to these paths, its automated reconciliation may apply merged desired state.
 
 ## Baseline and current scan
 
-A local Checkov 3.4.10 scan of `kubernetes/` initially reported **104 findings**. After the current hardening edits, the scan reports **678 passed, 0 failed, 1 skipped, and 0 parsing errors** across 70 resources. The one exception is deliberately temporary and annotated on the backend Deployment:
+A local Checkov 3.4.10 scan initially reported **104 findings**. The current manifests report **679 passed, 0 failed, 0 skipped, and 0 parsing errors** across 70 resources. The Kubernetes Checkov scan is a CI hard gate for unsuppressed failures and parsing errors; its job summary enumerates any future annotated exceptions. No Kubernetes Checkov exceptions remain active.
 
-| Check | Workload | Reason | Owner / expiry | Removal condition |
-| --- | --- | --- | --- | --- |
-| `CKV_K8S_35` | `kubernetes/application/backend/deployment.yaml` | The currently pinned backend image predates mounted Secret-file support. Keep the existing Secret-backed environment contract until a rebuilt image is available; application source and tests now support `*_PASSWORD_FILE`. | `@An619` / 2027-02-22 | Rebuild and promote the backend image by immutable digest with mounted Secret files; remove the legacy secret env references and this skip. |
+## Hardening delivered
 
-The scan is now a CI hard gate for unsuppressed failures and YAML parsing errors; its job summary includes any annotated exceptions. Do not add broad or unowned skips.
+- Pinned frontend and backend deployments to immutable digests from the signed images built on main for commit `2e6b726fa47344510ed5d5c3d97fb0da28d6372b`. Vendor image digests remain pinned as well.
+- Applied non-root identities, seccomp `RuntimeDefault`, dropped capabilities, no privilege escalation, and read-only root filesystems to application, Elastic Stack, Redis, and RabbitMQ workloads. Added writable data/cache/temp/log volumes as required.
+- Added resource requests/limits and health probes, including ephemeral-storage bounds for Kibana and Filebeat and resource bounds for the Logstash catalogue init container.
+- Added namespace-scoped NetworkPolicies for `elastiflix`, `infra`, and `elastic-stack`, with DNS and required application flows.
+- Disabled automatic service-account token mounting. Filebeat receives an explicit projected, short-lived token for Kubernetes metadata enrichment; its read-only RBAC is limited to namespaces, pods, and nodes.
+- Added backend support for mounted password files at two fixed paths, with tests for file reads, missing files, and rejection of arbitrary paths. The backend Deployment now mounts `backend-secret` and supplies only file paths, not password values, through environment variables.
+- Updated Nginx's Kubernetes Service lookup to use the pod's configured DNS rather than Docker's `127.0.0.11` resolver.
 
-## Hardening delivered in this working tree
+## Remaining rollout checks
 
-- Pinned the application and vendor image references to candidate OCI digests resolved by the existing read-only workflow. Re-resolve image references if their tags change; never invent digests.
-- Added non-root identities, seccomp `RuntimeDefault`, dropped capabilities, no privilege escalation, and read-only root filesystems to the application, Elastic Stack, Redis, and RabbitMQ workloads. Added explicit writable data/cache/temp/log volumes where those workloads need them.
-- Added resource bounds and health probes, including resource bounds for the Logstash catalogue init container.
-- Added namespace-scoped NetworkPolicies for `elastiflix`, `infra`, and `elastic-stack`, with DNS and required application flows. Logstash's catalogue bootstrap still needs HTTPS egress. Filebeat's Kubernetes API rule assumes private EKS control-plane ENIs in the Terraform private subnets; confirm the actual endpoint/service translation and CNI enforcement behavior before rollout. Keep CIDRs synchronized with `terraform/main.tf`.
-- Disabled automatic service-account token mounting for workloads. Filebeat receives only an explicit projected, short-lived token because its Kubernetes metadata processor requires API access; its read-only RBAC remains scoped to namespaces, pods, and nodes.
-- Added backend support for password files restricted to two fixed Secret mount paths, with tests for successful reads, missing files, and rejection of arbitrary paths. Updated Nginx's Kubernetes Service lookup so it no longer uses Docker's `127.0.0.11` resolver.
-- Added ephemeral-storage requests and limits to Kibana and Filebeat after SonarCloud flagged missing storage bounds.
-
-## Promotion prerequisites and validation limits
-
-- NetworkPolicies are not effective unless the cluster's CNI enforces them. Confirm EKS VPC CNI network-policy support and validate actual ALB, control-plane, pod, service-DNAT, and DNS addresses before enabling these policies in a live cluster. In particular, Filebeat's API allow rule assumes private control-plane ENIs; a public-only EKS API endpoint will not match the private-subnet CIDRs. The manifest CIDRs mirror the VPC public and private subnets in `terraform/main.tf`; they are not a substitute for live topology validation.
-- The current manifest image digests identify existing candidate images, not images built from these uncommitted source edits. Rebuild/publish and re-resolve the frontend/backend digests before promoting their source changes; do not treat a source change as present in an older image.
-- The Logstash init container currently downloads the movie catalogue from GitHub. Its NetworkPolicy permits TCP/443 egress; replace that bootstrap with a pre-baked or internally hosted catalogue before narrowing external egress further.
-- RabbitMQ/Redis SealedSecrets and AWS ExternalSecrets remain cluster-side prerequisites. Nothing was applied or deployed during this phase.
+- NetworkPolicies require CNI enforcement. Before a live rollout, verify EKS VPC CNI network-policy support and validate ALB, control-plane, pod, service-DNAT, and DNS paths against the actual cluster. Filebeat's API rule assumes private EKS control-plane ENIs in Terraform's private subnets; a public-only endpoint will not match those CIDRs. Keep policy CIDRs synchronized with `terraform/main.tf`.
+- Logstash downloads its movie catalogue from GitHub during initialization, so its policy allows TCP/443 egress. Replace the bootstrap with a pre-baked or internally hosted catalogue before narrowing external egress further.
+- Redis/RabbitMQ SealedSecrets and backend-secret provisioning remain cluster-side prerequisites. The manifests are not a substitute for validating those secrets exist in the target namespaces.
 
 ## Verification performed
 
-- Checkov 3.4.10: **678 passed, 0 failed, 1 documented skip, 0 parsing errors**.
-- Backend Node tests: **29 passed, 0 failed**.
-- Frontend Jest tests: **13 passed, 0 failed**; production frontend build succeeded.
-- Kubernetes YAML parsing and `git diff --check` are run as part of final validation. Hosted GitHub checks still need to run against the updated branch.
+- Checkov 3.4.10 local scan: **679 passed, 0 failed, 0 skipped, 0 parsing errors**.
+- Backend Node tests: **30 passed, 0 failed**.
+- Frontend Jest tests: **13 passed, 0 failed**; production build succeeded.
+- Hosted workflows on PR #26 and the main merge succeeded; the main `docker-push` job published and signed the frontend/backend images. Hosted validation for the follow-up digest-promotion PR is still required.
+- Kubernetes YAML parsing and `git diff --check` passed locally.
 
 ## Exit criteria
 
-- Unsuppressed Checkov findings and YAML parse errors fail CI; the only skip above has an owner, reason, expiry, and removal condition.
-- Review image digests, network-policy flows, secret availability, and the EKS CNI prerequisite before any promotion.
-- Do not apply manifests or initiate an AWS/GitOps rollout as part of this work.
+- Unsuppressed Kubernetes Checkov findings and YAML parsing errors fail CI; no active skips remain.
+- Review digest identity, secret availability, NetworkPolicy flows, and the EKS CNI prerequisite before relying on the configuration in a live cluster.
+- No AWS/GitOps rollout is initiated by this code change; cluster creation and rollout timing remain under the user's control.

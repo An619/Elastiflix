@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: an619/elastiflix-frontend:09fe45ac8fabf3242b95f88a79c651bd161b4e29@sha256:9f091e2251b9838fdd8c284743168d19ebd7290cb3c69b45ed94c63efa4cc5c0
+          image: an619/elastiflix-frontend:2e6b726fa47344510ed5d5c3d97fb0da28d6372b@sha256:7f3292aecdf6755727281c9a7b54350e2d082b95cdcfd1c2831127dfe62d9e25
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

@@ -11,7 +11,7 @@ jobs:
             - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
             - name: Build ${{ matrix.service }} Image
-              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
               with:
                   context: ./${{ matrix.service }}
                   file: ./${{ matrix.service }}/Dockerfile.prod
@@ -20,7 +20,7 @@ jobs:
                   tags: an619/elastiflix-${{ matrix.service }}:latest
 
             - name: Scan ${{ matrix.service }} Image
-              uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
               with:
                   image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
                   format: "table"

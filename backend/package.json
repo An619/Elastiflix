@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@elastic/search-ui-elasticsearch-connector": "^1.8.0",
-    "amqplib": "^2.2.1",
+    "amqplib": "^2.4.1",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "redis": "^6.3.1"

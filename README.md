@@ -1,5 +1,9 @@
 # 🎬 Elastiflix — Enterprise DevSecOps & GitOps Movie Search
 
+[![DevSecOps CI](https://github.com/An619/Elastiflix/actions/workflows/devsecops.yml/badge.svg?branch=main)](https://github.com/An619/Elastiflix/actions/workflows/devsecops.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=An619_Elastiflix&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=An619_Elastiflix)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch_9.1-00BFB3?style=for-the-badge&logo=elasticsearch&logoColor=white)
 ![React](https://img.shields.io/badge/React_18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Node.js](https://img.shields.io/badge/Node.js_22-339933?style=for-the-badge&logo=node.js&logoColor=white)
@@ -225,6 +229,14 @@ CI enforces **≥ 80% coverage on new code** via the SonarCloud Quality Gate.
 - [README-ELK.md](README-ELK.md) — Elastic Stack one-shot guide
 - [FROM-SCRATCH.md](FROM-SCRATCH.md) — build the whole stack from zero
 - [LEARN.md](LEARN.md) — concepts & learning path
+- [DEMO.md](DEMO.md) — **interview / demo runbook**: 10-minute scripted walkthrough + likely Q&A
+- [CHANGELOG.md](CHANGELOG.md) — what changed and why
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to work on this repo (gates, layout, PR rules)
+- [SECURITY.md](SECURITY.md) — vulnerability reporting & security posture
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: PRs to `main` only, CI must be green (tests · audits · Hadolint · SonarCloud Quality Gate · Trivy · Checkov · Gitleaks · kubeconform), and all third-party actions are SHA-pinned. Security issues go to the private channel in [SECURITY.md](SECURITY.md), never to public issues.
 
 ## 📜 License
 

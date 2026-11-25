@@ -1,5 +1,15 @@
 # terraform/main.tf
 
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+locals {
+  # Keep the VPC and EKS nodes in three available AZs without assuming that
+  # an account maps the same zone letters to the same physical locations.
+  availability_zones = slice(data.aws_availability_zones.available.names, 0, 3)
+}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1" # Pinned version (Fixes Checkov CKV_TF_1)
@@ -7,9 +17,18 @@ module "vpc" {
   name = "${var.cluster_name}-vpc"
   cidr = "10.0.0.0/16"
 
-  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
+  azs             = local.availability_zones
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb"             = "1"
+    "kubernetes.io/cluster/${var.cluster_name}-eks" = "shared"
+  }
+  public_subnet_tags = {
+    "kubernetes.io/role/elb"                       = "1"
+    "kubernetes.io/cluster/${var.cluster_name}-eks" = "shared"
+  }
 
   enable_nat_gateway = true
   single_nat_gateway = var.environment != "production"
@@ -37,15 +56,29 @@ module "eks" {
   version = "20.8.4" # Pinned version
 
   cluster_name    = "${var.cluster_name}-eks"
-  cluster_version = "1.30"
+  cluster_version = var.cluster_version
 
-  # Networking
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = module.vpc.private_subnets
-  control_plane_subnet_ids = module.vpc.private_subnets
+  # Networking: private endpoint access is always enabled. Public access is
+  # enabled only when the operator supplies explicit non-worldwide CIDRs.
+  vpc_id                             = module.vpc.vpc_id
+  subnet_ids                         = module.vpc.private_subnets
+  control_plane_subnet_ids           = module.vpc.private_subnets
+  cluster_endpoint_private_access    = true
+  cluster_endpoint_public_access     = length(var.cluster_endpoint_public_access_cidrs) > 0
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
 
-  # Allow your laptop to connect to the EKS API
-  cluster_endpoint_public_access = true
+  # The private SSM bastion is the default administrative path when public
+  # endpoint CIDRs are not configured.
+  cluster_security_group_additional_rules = {
+    bastion_https = {
+      description              = "Allow the private SSM bastion to reach the EKS API"
+      protocol                 = "tcp"
+      from_port                = 443
+      to_port                  = 443
+      type                     = "ingress"
+      source_security_group_id = module.bastion.security_group_id
+    }
+  }
 
   # Enable IAM roles for service accounts (IRSA)
   enable_irsa = true

@@ -18,17 +18,7 @@ resource "aws_security_group" "bastion" {
   description = "Security group for SSM bastion host"
   vpc_id      = var.vpc_id
 
-  # Checkov Fix: Restricted egress and added description
-  # TCP/80 is required: Ubuntu APT mirrors are HTTP-only, so without it
-  # user_data `apt-get update` hangs and the instance never bootstraps.
-  egress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTP outbound for APT mirrors"
-  }
-
+  # The bastion only needs HTTPS for Systems Manager through the NAT gateway.
   egress {
     from_port   = 443
     to_port     = 443
@@ -92,13 +82,21 @@ resource "aws_instance" "bastion" {
     encrypted   = true
   }
 
-  # Ubuntu 22.04 AMIs already ship amazon-ssm-agent, so no manual install
-  # is needed. Keep user_data minimal: just ensure the agent is running.
+  # Ubuntu 22.04 AMIs may expose the preinstalled SSM agent as a package or
+  # snap unit. Detect either supported name and fail visibly if neither exists.
   user_data = <<-EOF
               #!/bin/bash
-              sudo apt-get update -y
-              sudo systemctl enable amazon-ssm-agent || true
-              sudo systemctl start amazon-ssm-agent || true
+              set -Eeuo pipefail
+              if systemctl cat amazon-ssm-agent.service >/dev/null 2>&1; then
+                ssm_unit=amazon-ssm-agent.service
+              elif systemctl cat snap.amazon-ssm-agent.amazon-ssm-agent.service >/dev/null 2>&1; then
+                ssm_unit=snap.amazon-ssm-agent.amazon-ssm-agent.service
+              else
+                echo "amazon-ssm-agent systemd unit not found" >&2
+                exit 1
+              fi
+              systemctl enable --now "$ssm_unit"
+              systemctl is-active --quiet "$ssm_unit"
               EOF
 
   tags = {

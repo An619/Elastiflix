@@ -2,6 +2,38 @@ name: Docker and IaC Scans
 on: workflow_call
 
 jobs:
+    trivy-filesystem-scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Scan filesystem dependencies
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  # The frontend lockfile has an exact, time-bound CRA build-toolchain
+                  # policy check in dependency-scan.yml; npm audit covers its runtime tree.
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "1"
+                  ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+
+            - name: Report all HIGH/CRITICAL filesystem findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
+                  severity: "CRITICAL,HIGH"
+
     trivy-image-scan:
         runs-on: ubuntu-latest
         strategy:
@@ -22,10 +54,21 @@ jobs:
             - name: Scan ${{ matrix.service }} Image
               uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
               with:
+                  version: v0.70.0
                   image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
                   format: "table"
                   exit-code: "1"
                   ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+
+            - name: Report all HIGH/CRITICAL image findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
                   severity: "CRITICAL,HIGH"
 
     checkov-iac-scan:
@@ -43,9 +86,9 @@ jobs:
             - name: Checkov Terraform Scan
               run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
             # Kubernetes scan is report-only for now: the raw scan reports
-            # ~105 findings (digest pinning, seccomp profiles, root-run
-            # beats) on manifests that cannot be fixed/verified without a
-            # cluster + registry. Track as tech debt; drop --soft-fail once
-            # the manifest hardening pass lands.
+            # 104 findings in the local Checkov 3.4.10 validation (including
+            # digest pinning, seccomp profiles, and runtime hardening).
+            # Keep these findings visible as tracked hardening debt; make the
+            # Kubernetes scan blocking after the remediation pass is complete.
             - name: Checkov Kubernetes Scan (report-only)
               run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail

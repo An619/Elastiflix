@@ -15,19 +15,20 @@ The pipeline must land changes in Kubernetes without giving CI permanent cluster
 
 **Pull-based GitOps with Argo CD** (option 2). Specifically:
 
-- `docker-push` only builds/pushes images and bumps `image:` tags in `kubernetes/application/` (committing back with `[skip ci]`).
-- Argo CD (see `kubernetes/argocd-app.yaml`, `argocd-infra.yaml`, `argocd-elk.yaml`, `argocd-ingress.yaml`, `argocd-monitoring.yaml`) watches `HEAD` of `main`, with `automated.prune`, `automated.selfHeal`, `syncOptions: CreateNamespace=true`.
-- Rollback = `git revert` of the tag-bump commit; Argo CD reconciles the cluster back automatically.
+- `docker-push` builds and publishes commit-SHA-tagged images only; it does not modify Kubernetes manifests or push repository changes.
+- A maintainer proposes image-reference updates through a separate reviewed GitOps change. Argo CD Applications (see `kubernetes/argocd-app.yaml`, `argocd-infra.yaml`, `argocd-elk.yaml`, `argocd-monitoring.yaml`) sync their configured paths with automated prune/self-heal; the bootstrap applies these Application objects. There is no App-of-Apps root currently.
+- Rollback = revert the reviewed manifest change; Argo CD reconciles the affected path back to the previous desired state.
 
 ## Consequences
 
 - ✅ CI holds **zero** cluster credentials; the attack surface of the build pipeline is minimal.
 - ✅ Cluster state is auditable from git; drift is auto-corrected (`selfHeal`) or made visible, never silent.
-- ✅ Declarative rollouts (canary, sync waves) come free from the operator model.
+- ✅ Desired state and rollback history are reviewable in Git; Argo CD reconciles only the configured Applications.
+- ⚠️ The existing Rollout manifest has no real traffic routing or metric-driven analysis yet; those capabilities require separate implementation and testing.
 - ⚠️ Debugging requires two lenses: git history *and* `argocd app diff`. Teams must learn the Argo CD mental model.
 - ⚠️ Config not representable as manifests (secret bootstrap) still needs an imperative step — handled via Sealed Secrets / ESO instead (see ADR-0002 and `kubernetes/infra/`).
 
 ## Alternatives considered
 
 - **Push with kubeconfig in CI:** rejected — long-lived cluster credential in GitHub secrets, no drift detection.
-- **Flux:** functionally equivalent; Argo CD chosen for the UI/app-of-apps pattern and existing Helm chart maturity.
+- **Flux:** functionally equivalent; Argo CD retained because it is already used in this repository and provides an application UI. The repository does not currently implement an App-of-Apps root.

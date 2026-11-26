@@ -1,9 +1,17 @@
-name: Push Images & Update GitOps
+name: Publish Docker Images
 on:
     workflow_call:
+        secrets:
+            DOCKER_HUB_USER:
+                required: true
+            DOCKER_HUB_PASSWORD:
+                required: true
 
+# Publishing images does not need to write to the repository. GitOps manifest
+# promotions must be made through a separately reviewed change.
 permissions:
-    contents: write
+    contents: read
+    id-token: write
 
 concurrency:
     group: docker-push-${{ github.ref }}
@@ -15,8 +23,7 @@ jobs:
         steps:
             - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
               with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
-                  persist-credentials: true
+                  persist-credentials: false
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
@@ -27,31 +34,58 @@ jobs:
                   password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
             - name: Build and Push Frontend
+              id: push-frontend
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
               with:
                   context: ./frontend
                   file: ./frontend/Dockerfile.prod
                   push: true
                   tags: an619/elastiflix-frontend:${{ github.sha }}
+                  sbom: true
+                  provenance: mode=max
 
             - name: Build and Push Backend
+              id: push-backend
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
               with:
                   context: ./backend
                   file: ./backend/Dockerfile.prod
                   push: true
                   tags: an619/elastiflix-backend:${{ github.sha }}
+                  sbom: true
+                  provenance: mode=max
 
-            - name: Update K8s Manifests for GitOps
-              run: |
-                  sed -i "s|an619/elastiflix-frontend:.*|an619/elastiflix-frontend:${{ github.sha }}|g" kubernetes/application/frontend/deployment.yaml
-                  sed -i "s|an619/elastiflix-backend:.*|an619/elastiflix-backend:${{ github.sha }}|g" kubernetes/application/backend/deployment.yaml
+            - name: Install Cosign
+              uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+              with:
+                  cosign-release: v3.1.5
 
-            - name: Commit and Push Changes
+            - name: Sign and verify images by digest
+              env:
+                  FRONTEND_DIGEST: ${{ steps.push-frontend.outputs.digest }}
+                  BACKEND_DIGEST: ${{ steps.push-backend.outputs.digest }}
               run: |
-                  git config --global user.name "GitHub Actions Bot"
-                  git config --global user.email "actions@github.com"
-                  git add kubernetes/
-                  git diff --cached --quiet || git commit -m "chore: update image tags to ${{ github.sha }} [skip ci]"
-                  git pull --rebase origin main
-                  git push origin HEAD:main
+                  frontend_ref="an619/elastiflix-frontend@${FRONTEND_DIGEST}"
+                  backend_ref="an619/elastiflix-backend@${BACKEND_DIGEST}"
+
+                  cosign sign --yes "$frontend_ref"
+                  cosign sign --yes "$backend_ref"
+
+                  signer='https://github.com/An619/Elastiflix/.github/workflows/docker-push.yml@refs/heads/main'
+                  issuer='https://token.actions.githubusercontent.com'
+                  cosign verify --certificate-identity "$signer" --certificate-oidc-issuer "$issuer" "$frontend_ref"
+                  cosign verify --certificate-identity "$signer" --certificate-oidc-issuer "$issuer" "$backend_ref"
+
+            - name: Report published image references
+              run: |
+                  {
+                    echo "## Published container images"
+                    echo "- Frontend tag: \`an619/elastiflix-frontend:${GITHUB_SHA}\`"
+                    echo "- Frontend digest: \`an619/elastiflix-frontend@${{ steps.push-frontend.outputs.digest }}\`"
+                    echo "- Backend tag: \`an619/elastiflix-backend:${GITHUB_SHA}\`"
+                    echo "- Backend digest: \`an619/elastiflix-backend@${{ steps.push-backend.outputs.digest }}\`"
+                    echo "- SBOM and provenance: attached to each published image by BuildKit (Syft SBOM generator)."
+                    echo "- Cosign signatures: verified against the main-branch reusable workflow identity."
+                    echo ""
+                    echo "Promote digest-pinned references through a reviewed GitOps change."
+                  } >> "$GITHUB_STEP_SUMMARY"

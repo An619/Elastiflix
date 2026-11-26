@@ -4,10 +4,10 @@ metadata:
   name: infra-databases
   namespace: argocd
 spec:
-  project: default
+  project: elastiflix
   source:
     repoURL: "https://github.com/An619/Elastiflix.git"
-    targetRevision: HEAD
+    targetRevision: main
     path: kubernetes/infra
     directory:
       exclude: "*-sealedsecret.yaml"

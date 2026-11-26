@@ -5,11 +5,31 @@ metadata:
   namespace: elastiflix
 spec:
   replicas: 2
+  progressDeadlineSeconds: 600
   strategy:
     canary:
+      stableService: frontend
+      canaryService: frontend-canary
+      scaleDownDelaySeconds: 30
+      abortScaleDownDelaySeconds: 30
+      maxSurge: 1
+      maxUnavailable: 0
       steps:
-        - setWeight: 20
-        - pause: { duration: 30s } # Wait 30 seconds before full rollout
+        - setWeight: 10
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
+        - setWeight: 25
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
+        - setWeight: 50
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
         - setWeight: 100
   selector:
     matchLabels:

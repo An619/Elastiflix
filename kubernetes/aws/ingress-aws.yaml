@@ -11,6 +11,10 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/healthcheck-path: /
+    # Argo Rollouts updates this action to add the canary target group and
+    # weighted traffic split during a rollout. Keep the initial route stable.
+    alb.ingress.kubernetes.io/actions.frontend: |
+      {"Type":"forward","ForwardConfig":{"TargetGroups":[{"ServiceName":"frontend","ServicePort":"80","Weight":100}]}}
 spec:
   ingressClassName: alb
   rules:
@@ -31,4 +35,4 @@ spec:
               service:
                 name: frontend
                 port:
-                  number: 80
+                  name: use-annotation

@@ -35,10 +35,10 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 2. **On merge to `main`** the same gates go green, then `docker-push` builds both images with `docker/build-push-action` and pushes them to Docker Hub tagged with the **commit SHA** (never `latest`).
 3. CI reports the published image references but does **not** mutate the GitOps configuration. A maintainer proposes the new image tags in a reviewed manifest change.
 4. **Argo CD** watches the configured repository paths (automated sync + `selfHeal` + `prune`) and converges the cluster after the reviewed manifest change is merged.
-5. The frontend has a basic Argo Rollouts canary step sequence (**20% → pause 30s → 100%**). This configuration has no traffic router or metric-based analysis yet, so it does not guarantee a true 20% traffic split or automatic health-based abort.
-6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend.
+5. The frontend Rollout now declares stable/canary Services, progressive traffic weights (**10% → 25% → 50% → 100%**) and a Prometheus AnalysisTemplate. Minikube uses the NGINX traffic router; EKS uses the ALB router. Runtime controller compatibility and controlled-abort behavior remain to be validated.
+6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend in Minikube. The separate EKS ALB Ingress remains gated on approved ACM certificate and DNS values.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
-8. **Observability components** include Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs and kube-prometheus-stack for metrics. Alertmanager is disabled and the backend scrape configuration is incomplete. `minio.yaml` is not a complete backup solution: Velero schedules and restore automation are not configured.
+8. **Observability components** include Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs and kube-prometheus-stack for metrics. Alertmanager remains disabled pending an approved receiver; `minio.yaml` is not a complete backup solution and Velero schedules/restore automation are not configured.
 
 > Search data model: the catalog (`data-loader/movies/movies.json.gz`) is bulk-indexed by `data-loader/index-data.py`, which derives the `user_score` facet from TMDB `vote_average` and pulls ELSER/E5 inference pipelines (`data-loader/config/`) so the same index serves BM25, vector semantic, hybrid, and reranked retrieval.
 
@@ -79,14 +79,14 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 | **Docker Compose** | Local one-shot ELK | Full stack + beats + app in one command (`start.sh`) — the fastest way to hack on this repo |
 | **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, `argocd`, `velero` |
 | **NGINX Ingress Controller** | Local app routing | Local-only HTTP host rules for the app and API; Argo CD, Kibana, and Grafana are not exposed by Ingress |
-| **Argo Rollouts** | Progressive delivery | Frontend has a basic `20% → pause 30s → 100%` step sequence; weighted traffic routing and metric-based analysis are not configured yet |
+| **Argo Rollouts** | Progressive delivery | Frontend uses NGINX (Minikube) or ALB (EKS) traffic routing, stable/canary Services and Prometheus analysis; live controller compatibility and abort/rollback behavior remain unvalidated |
 | **Helm** | Chart management | Infra values (`helm/elasticsearch`, `helm/redis`, `helm/rabbitmq`) + installs Argo CD, ESO, ALB controller, kube-prometheus-stack |
 
 ### 🔁 GitOps & delivery
 
 | Tool | Used for | Why it's here |
 |---|---|---|
-| **Argo CD** | Continuous delivery | Separate Application manifests watch configured repository paths with automated prune + self-heal; the local bootstrap initially applies those Application objects with `kubectl` |
+| **Argo CD** | Continuous delivery | Local and EKS App-of-Apps roots register environment-specific child Applications; a restricted `elastiflix` AppProject limits source repositories, destinations and cluster-scoped kinds. EKS workload sync remains manual until the approved ALB Ingress is healthy |
 | **Docker Hub** (`an619/elastiflix-*`) | Image registry | Images are published with commit-SHA tags; tag immutability is not enforced at the registry |
 | **Local Kubernetes secrets** | Minikube development | Bootstrap requires unique random passwords and creates namespace-scoped Secrets through short-lived private files; no credentials are committed |
 | **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → Kubernetes Secrets via a dedicated **IRSA** service account (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
@@ -112,7 +112,7 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 | Tool | Scope |
 |---|---|
 | **kube-prometheus-stack 58.2.2** (Argo CD app) | Prometheus + Grafana; Alertmanager disabled; namespace `monitoring`; Grafana is accessed with a local `kubectl port-forward`, not Ingress |
-| **App + infrastructure metrics** | Backend `/metrics` (including authenticated Redis INFO gauges) and RabbitMQ Prometheus plugin; ServiceMonitors, Grafana dashboards, and alert rules are configured (runtime and notification delivery remain unvalidated) |
+| **App + infrastructure metrics** | Backend `/metrics` exports bounded response/status and latency histograms plus Redis gauges; ServiceMonitors, SLO burn-rate rules, and Grafana dashboards include a proposed 99.5% rolling 7-day availability target (not an approved SLA). Prometheus/alert delivery remains runtime-unvalidated; Alertmanager notifications are disabled pending an approved receiver |
 | **Kibana dashboards** | Movies catalog explore, application logs, infrastructure health (`elk/`, `load-dashboards.sh`) |
 | **Structured logs** | `level`, `service`, `path`, `status`, `duration_ms`, `search_type`, `cache_hit` per line |
 
@@ -188,7 +188,7 @@ ansible-playbook ansible/playbook.yml
 kubectl apply -f kubernetes/argocd-aws-ingress.yaml
 ```
 
-Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md) and [FROM-SCRATCH.md](FROM-SCRATCH.md).
+Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
 
 ---
 
@@ -199,8 +199,8 @@ frontend/          React 18 SPA (@elastic/eui, react-search-ui) + nginx prod ima
 backend/           Express (ESM) API — search/semantic/hybrid/rerank + cache + events
 data-loader/       Python bulk indexer for the movie catalog (+ config templates)
 elk/               Filebeat · Metricbeat · Logstash (pipelines, index templates)
-kubernetes/        application/ (Rollout+Deployment, Ingress) · infra/ · elastic-stack/ · aws/
-helm/              values for elasticsearch / redis / rabbitmq charts
+kubernetes/        application/ base · environments/ (Minikube/EKS overlays) · gitops/ (App-of-Apps) · infra/ · elastic-stack/ · aws/
+helm/              pinned Argo CD config + values for Elasticsearch / Redis / RabbitMQ charts
 terraform/         VPC · EKS · IAM/IRSA · ALB · bastion (private, SSM)
 ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB controller)
 .github/workflows/ DevSecOps pipeline (reusable workflows + SHA-pinned actions)
@@ -220,7 +220,7 @@ ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB control
 ## 🧪 Tests
 
 ```bash
-# backend — 26 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
+# backend — 40 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
 cd backend && npm ci && npm run test:coverage      # lcov in backend/coverage/
 
 # frontend — 13 tests (CRA/jest)

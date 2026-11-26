@@ -1,0 +1,7 @@
+- op: add
+  path: /spec/strategy/canary/trafficRouting
+  value:
+    alb:
+      ingress: app-ingress
+      rootService: frontend
+      servicePort: 80

@@ -56,6 +56,7 @@ kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubuse
 
 echo "⏳ 4. Waiting for Argo CD to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+kubectl apply -f kubernetes/argocd-rollout-health.yaml
 
 # Keep Argo CD's built-in TLS and generated initial admin password. Access it
 # with kubectl port-forward; do not publish its admin interface over HTTP.
@@ -63,6 +64,9 @@ kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -
 echo "🚀 5. Installing Argo Rollouts..."
 kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply --server-side --force-conflicts -n argo-rollouts -f https://raw.githubusercontent.com/argoproj/argo-rollouts/v1.10.2/manifests/install.yaml
+kubectl wait --for=condition=available --timeout=300s deployment/argo-rollouts -n argo-rollouts
+kubectl wait --for=condition=available --timeout=300s deployment/ingress-nginx-controller -n ingress-nginx
+scripts/phase4-controller-report.sh minikube
 
 echo "🦅 6. Installing pinned Falco runtime security chart..."
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
@@ -120,8 +124,9 @@ kubectl create secret generic elasticsearch-tls -n elastic-stack \
 # Elasticsearch starts under TLS, then users and client API keys are created
 # only after its readiness endpoint responds. The persistent local credential
 # directory is git-ignored; it must be backed up securely for PVC recovery.
-echo "🔄 8. Deploying local Elasticsearch TLS bootstrap resources..."
-kubectl apply -f kubernetes/argocd-elk.yaml
+echo "🔄 8. Deploying the local App-of-Apps root..."
+kubectl apply -f kubernetes/argocd-project.yaml
+kubectl apply -f kubernetes/argocd-local-root.yaml
 kubectl -n elastic-stack rollout status statefulset/elasticsearch --timeout=10m
 kubectl port-forward -n elastic-stack svc/elasticsearch 19200:9200 >/dev/null 2>&1 &
 elasticsearch_port_forward_pid=$!
@@ -146,12 +151,8 @@ kill "$elasticsearch_port_forward_pid" 2>/dev/null || true
 wait "$elasticsearch_port_forward_pid" 2>/dev/null || true
 trap 'rm -rf "$secret_dir"' EXIT
 
-echo "🔄 9. Deploying remaining local Argo CD Applications (GitOps)..."
-kubectl apply -f kubernetes/argocd-app.yaml
-kubectl apply -f kubernetes/argocd-infra.yaml
-kubectl apply -f kubernetes/argocd-elk.yaml
-kubectl apply -f kubernetes/argocd-monitoring.yaml
-kubectl apply -f kubernetes/argocd-monitoring-network-policy.yaml
+echo "🔄 9. Confirming the local App-of-Apps root is registered..."
+kubectl -n argocd get application elastiflix-local-root
 
 cat <<'EOF'
 

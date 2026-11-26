@@ -21,6 +21,8 @@ describe("Backend API", () => {
     assert.equal(res.status, 200);
     assert.match(res.text, /elastiflix_http_requests_total/);
     assert.match(res.text, /elastiflix_search_requests_total/);
+    assert.match(res.text, /elastiflix_http_responses_total/);
+    assert.match(res.text, /elastiflix_http_request_duration_seconds_bucket/);
   });
 
   it("POST /api/search with empty body does not crash (no req.body)", async () => {
@@ -75,6 +77,27 @@ describe("Backend API", () => {
   it("GET /metrics reflects application requests", async () => {
     const res = await request(app).get("/metrics");
     assert.match(res.text, /elastiflix_http_requests_total [1-9]/);
+  });
+
+  it("records bounded route/status and latency metrics without exposing raw paths", async () => {
+    await request(app).get("/api/users/private-id?query=private-query");
+    const res = await request(app).get("/metrics");
+    assert.match(res.text, /elastiflix_http_responses_total\{route="\/api\/other",status_class="4xx"\} \d+/);
+    assert.match(res.text, /elastiflix_http_request_duration_seconds_bucket\{route="\/api\/other",le="\+Inf"\} \d+/);
+    assert.doesNotMatch(res.text, /private-id|private-query/);
+  });
+
+  it("counts every completed 5xx response in the error counter", async () => {
+    const beforeResponse = await request(app).get("/metrics");
+    const before = Number(beforeResponse.text.match(/^elastiflix_errors_total (\d+)$/m)?.[1]);
+    const failed = await request(app)
+      .post("/api/search")
+      .set("Content-Type", "application/json")
+      .send({ state: { searchTerm: "slo-error-probe" }, queryConfig: {} });
+    assert.equal(failed.status, 500);
+    const afterResponse = await request(app).get("/metrics");
+    const after = Number(afterResponse.text.match(/^elastiflix_errors_total (\d+)$/m)?.[1]);
+    assert.equal(after, before + 1);
   });
 
   it("Prometheus scrapes do not increment application request counters", async () => {

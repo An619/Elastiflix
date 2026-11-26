@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - argocd-app.yaml
+  - argocd-infra.yaml
+  - argocd-elk.yaml
+  - argocd-monitoring.yaml
+  - argocd-monitoring-network-policy.yaml

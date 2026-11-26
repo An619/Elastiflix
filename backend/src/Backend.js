@@ -26,8 +26,6 @@ if (process.env.LOCAL) {
     })
   );
 }
-app.use(express.json());
-
 // --- URL helpers: support allowlisted Kubernetes Secret paths or local envs ---
 function redisUrl(readSecretFile) {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
@@ -117,6 +115,22 @@ const metrics = {
   redisMemoryUsedBytes: null,
   redisConnectedClients: null,
 };
+const responseCounts = new Map();
+const requestDurationBuckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+const requestDurations = new Map();
+
+// Keep label cardinality bounded: never put raw URLs, query strings, or user
+// input into Prometheus labels.
+function metricsRoute(path) {
+  if (["/", "/healthz", "/api/search", "/api/rerank/search", "/api/semantic/search", "/api/hybrid/search", "/api/autocomplete"].includes(path)) {
+    return path;
+  }
+  return path.startsWith("/api/") ? "/api/other" : "/other";
+}
+
+function escapePrometheusLabel(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll('"', '\\"');
+}
 const redisInfoValue = (info, key) => {
   const line = info.split(/\r?\n/).find((entry) => entry.startsWith(`${key}:`));
   if (!line) return null;
@@ -129,9 +143,32 @@ app.use((req, res, next) => {
   if (req.path !== "/metrics") {
     metrics.requestsTotal += 1;
     if (req.path.startsWith("/api/")) metrics.searchRequests += 1;
+
+    const route = metricsRoute(req.path);
+    const startedAt = process.hrtime.bigint();
+    res.once("finish", () => {
+      const statusClass = `${Math.floor(res.statusCode / 100)}xx`;
+      const responseKey = `${route}|${statusClass}`;
+      responseCounts.set(responseKey, (responseCounts.get(responseKey) ?? 0) + 1);
+      if (res.statusCode >= 500) metrics.errors += 1;
+
+      const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+      const duration = requestDurations.get(route) ?? {
+        count: 0,
+        sum: 0,
+        buckets: new Array(requestDurationBuckets.length).fill(0),
+      };
+      duration.count += 1;
+      duration.sum += durationSeconds;
+      requestDurationBuckets.forEach((bucket, index) => {
+        if (durationSeconds <= bucket) duration.buckets[index] += 1;
+      });
+      requestDurations.set(route, duration);
+    });
   }
   next();
 });
+app.use(express.json());
 app.get("/metrics", async (req, res) => {
   if (redisClient && typeof redisClient.info === "function") {
     try {
@@ -170,6 +207,20 @@ app.get("/metrics", async (req, res) => {
       "# HELP elastiflix_errors_total Total errors",
       "# TYPE elastiflix_errors_total counter",
       `elastiflix_errors_total ${metrics.errors}`,
+      "# HELP elastiflix_http_responses_total HTTP responses by bounded route and status class",
+      "# TYPE elastiflix_http_responses_total counter",
+      ...[...responseCounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => {
+        const [route, statusClass] = key.split("|");
+        return `elastiflix_http_responses_total{route=\"${escapePrometheusLabel(route)}\",status_class=\"${statusClass}\"} ${count}`;
+      }),
+      "# HELP elastiflix_http_request_duration_seconds HTTP response duration in seconds",
+      "# TYPE elastiflix_http_request_duration_seconds histogram",
+      ...[...requestDurations.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([route, duration]) => [
+        ...requestDurationBuckets.map((bucket, index) => `elastiflix_http_request_duration_seconds_bucket{route=\"${escapePrometheusLabel(route)}\",le=\"${bucket}\"} ${duration.buckets[index]}`),
+        `elastiflix_http_request_duration_seconds_bucket{route=\"${escapePrometheusLabel(route)}\",le=\"+Inf\"} ${duration.count}`,
+        `elastiflix_http_request_duration_seconds_sum{route=\"${escapePrometheusLabel(route)}\"} ${duration.sum}`,
+        `elastiflix_http_request_duration_seconds_count{route=\"${escapePrometheusLabel(route)}\"} ${duration.count}`,
+      ]),
       "",
     ].join("\n")
   );
@@ -242,7 +293,6 @@ app.post("/api/autocomplete", async (req, res) => {
   try {
     res.json(await SearchConnector.onAutocomplete(state, queryConfig));
   } catch (err) {
-    metrics.errors += 1;
     log.error({ event: "autocomplete_failed", error: err?.message ?? String(err) });
     res.status(500).json({ error: "autocomplete_failed" });
   }

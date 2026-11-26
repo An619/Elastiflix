@@ -24,10 +24,16 @@ We follow coordinated disclosure: after a fix ships, we're happy to credit you (
 - Non-root containers, `runAsNonRoot`, `drop: [ALL]` capabilities, no privilege escalation
 - No public compute IPs; AWS access via **SSM** to a private bastion
 - Secrets in git are **Sealed Secrets** (encrypted); cloud secrets via **External Secrets Operator + AWS Secrets Manager (IRSA)**
-- CI gates on every push/PR: **Gitleaks** (secrets), **Trivy** (CRITICAL/HIGH image CVEs), **Checkov** (Terraform hard gate), **SonarCloud** (SAST + Quality Gate), **npm audit / pip-audit** (high+), **Hadolint**
+- CI is configured for **Gitleaks**, **Trivy** image scanning, **Checkov** (Terraform blocking; Kubernetes currently report-only), **SonarCloud**, dependency audits, and **Hadolint**; required checks must be observed green before calling a change validated
+- Workflow permissions default to read-only; publishing receives only the Docker Hub secrets and OIDC signing permission it needs
+- Images use commit-SHA tags, and the publish workflow is configured to attach BuildKit/Syft SBOM and provenance attestations and Cosign-sign/verify the pushed digest; SHA tags alone are not registry-enforced immutable
+- Frontend full-tree HIGH/CRITICAL audit findings have exact package/version/path exceptions with an expiry and tracking record; new, runtime, changed, or expired findings fail the policy check. Moderate findings remain visible under the configured audit threshold.
 - **All third-party GitHub Actions are SHA-pinned**
-- Image tags equal the git commit SHA (immutable provenance)
 - Least-privilege RBAC (`kubernetes/application/rbac`), tier-separated namespaces
+
+## Vulnerability exception policy
+
+The exception list is [`security/vulnerability-exceptions.json`](security/vulnerability-exceptions.json); the currently accepted CRA build-toolchain risk and exit criteria are documented in [`security/accepted-risks/cra-build-toolchain.md`](security/accepted-risks/cra-build-toolchain.md). Exceptions must be exact to project, resolved package version, dependency path, scope, and severity; they must be development-only, owned, documented, and expire no later than the policy date. The Node policy checker fails closed on new or changed HIGH/CRITICAL findings, runtime findings, expired exceptions, stale entries, invalid audit output, and registry/network errors. Do not add a blanket ignore or extend an exception without reviewing the affected package and updating its risk record.
 
 ## Scope notes
 

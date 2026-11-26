@@ -188,7 +188,7 @@ ansible-playbook ansible/playbook.yml
 kubectl apply -f kubernetes/argocd-aws-ingress.yaml
 ```
 
-Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
+Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), [Phase 6 backup/DR status](docs/security/phase-6-backup-disaster-recovery.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
 
 ---
 
@@ -221,16 +221,19 @@ ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB control
 
 ```bash
 # backend — 42 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
-cd backend && npm ci && npm run test:coverage      # lcov in backend/coverage/
+(cd backend && npm ci && npm run test:coverage)      # lcov in backend/coverage/
 
 # frontend — 13 tests (CRA/jest)
-cd frontend && npm ci --legacy-peer-deps && CI=true npm test -- --watchAll=false
+(cd frontend && npm ci --legacy-peer-deps && CI=true npm test -- --watchAll=false)
 
 # data-loader — 8 tests, zero third-party deps required
-cd data-loader && python3 test_index_data.py
+(cd data-loader && python3 test_index_data.py)
+
+# Elasticsearch backup client — mocked HTTP only; no cluster or AWS calls
+bash scripts/test-elasticsearch-snapshot.sh
 
 # terraform
-cd terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
+(cd terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
 ```
 
 CI enforces **≥ 80% coverage on new code** via the SonarCloud Quality Gate.

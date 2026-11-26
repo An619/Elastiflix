@@ -23,8 +23,10 @@ jobs:
                   tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
             - name: Lint GitHub Actions workflows
               run: /tmp/actionlint -color .github/workflows/*.yml
-            - name: Validate bootstrap shell syntax
+            - name: Validate bootstrap and backup script shell syntax
               run: bash -n bootstrap.sh start.sh scripts/*.sh
+            - name: Test Elasticsearch snapshot safeguards with mocked HTTP
+              run: bash scripts/test-elasticsearch-snapshot.sh
             - name: Test Frontend
               run: |
                   cd frontend

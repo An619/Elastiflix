@@ -34,7 +34,7 @@ module "bastion" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.4" # Pinned version
+  version = "21.30.2" # Pinned version
 
   cluster_name    = "${var.cluster_name}-eks"
   cluster_version = "1.30"

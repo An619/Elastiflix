@@ -6,20 +6,18 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    # Fail closed: no HTTP listener is created. Before syncing this Ingress,
+    # supply the approved ACM certificate ARN and DNS hostname for the service.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/healthcheck-path: /
 spec:
   ingressClassName: alb
   rules:
     - http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
+          # /api MUST come before / — ALB evaluates rules in order and
+          # Prefix "/" would otherwise match every request, shadowing /api.
           - path: /api
             pathType: Prefix
             backend:
@@ -27,3 +25,10 @@ spec:
                 name: backend
                 port:
                   number: 17700
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

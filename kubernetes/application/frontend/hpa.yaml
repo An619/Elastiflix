@@ -1,0 +1,32 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: elastiflix
+spec:
+  # Argo Rollouts exposes the Kubernetes scale subresource, allowing an HPA
+  # to adjust the desired replica count while preserving the rollout strategy.
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: elastiflix
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend

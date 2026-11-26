@@ -25,50 +25,102 @@ spec:
       labels:
         app: redis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:7-alpine
-          # NEW: Load the password from the Sealed Secret
-          envFrom:
-            - secretRef:
-                name: redis-secret
-          # UPDATED: Use the environment variable instead of hardcoded text
-          command:
-            [
-              "redis-server",
-              "--requirepass",
-              "$(REDIS_PASSWORD)",
-              "--appendonly",
-              "yes",
-            ]
+          image: redis:7-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+          imagePullPolicy: Always
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              password="$(cat /run/secrets/redis/redis-password)"
+              case "$password" in
+                *[!A-Za-z0-9_-]*|'') echo "Redis password contains unsupported characters" >&2; exit 1 ;;
+              esac
+              umask 077
+              printf 'requirepass %s\n' "$password" > /tmp/redis.conf
+              exec redis-server /tmp/redis.conf --appendonly yes
           ports:
             - containerPort: 6379
           resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
             limits:
               memory: "256Mi"
               cpu: "250m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
           volumeMounts:
             - name: redis-data
               mountPath: /data
+            - name: redis-secret
+              mountPath: /run/secrets/redis
+              readOnly: true
+            - name: redis-tmp
+              mountPath: /tmp
       volumes:
         - name: redis-data
           persistentVolumeClaim:
             claimName: redis-pvc
+        - name: redis-secret
+          secret:
+            secretName: redis-secret
+            items:
+              - key: redis-password
+                path: redis-password
+        - name: redis-tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: redis
   namespace: infra
+  labels:
+    app: redis
 spec:
   selector:
     app: redis
   ports:
-    - port: 6379
+    - name: redis
+      port: 6379
       targetPort: 6379
 
 
 # --- RABBITMQ ---
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-enabled-plugins
+  namespace: infra
+data:
+  enabled_plugins: "[rabbitmq_management,rabbitmq_prometheus]."
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -96,39 +148,93 @@ spec:
       labels:
         app: rabbitmq
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rabbitmq
-          image: rabbitmq:3-management-alpine
-          # NEW: Load the password from the Sealed Secret
-          envFrom:
-            - secretRef:
-                name: rabbitmq-secret
+          image: rabbitmq:3-management-alpine@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281
+          imagePullPolicy: Always
           env:
             - name: RABBITMQ_DEFAULT_USER
               value: "user"
-            # DELETED: RABBITMQ_DEFAULT_PASS is removed from here
+            - name: RABBITMQ_DEFAULT_PASS_FILE
+              value: /run/secrets/rabbitmq/rabbitmq-password
           ports:
             - containerPort: 5672
               name: amqp
             - containerPort: 15672
               name: management
+            - containerPort: 15692
+              name: metrics
           resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
             limits:
               memory: "512Mi"
               cpu: "500m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
           volumeMounts:
             - name: rabbitmq-data
               mountPath: /var/lib/rabbitmq
+            - name: rabbitmq-secret
+              mountPath: /run/secrets/rabbitmq
+              readOnly: true
+            - name: rabbitmq-tmp
+              mountPath: /tmp
+            - name: rabbitmq-plugins
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+              readOnly: true
       volumes:
         - name: rabbitmq-data
           persistentVolumeClaim:
             claimName: rabbitmq-pvc
+        - name: rabbitmq-secret
+          secret:
+            secretName: rabbitmq-secret
+            items:
+              - key: rabbitmq-password
+                path: rabbitmq-password
+        - name: rabbitmq-tmp
+          emptyDir: {}
+        - name: rabbitmq-plugins
+          configMap:
+            name: rabbitmq-enabled-plugins
+            items:
+              - key: enabled_plugins
+                path: enabled_plugins
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq
   namespace: infra
+  labels:
+    app: rabbitmq
 spec:
   selector:
     app: rabbitmq
@@ -137,3 +243,6 @@ spec:
       name: amqp
     - port: 15672
       name: management
+    - port: 15692
+      targetPort: metrics
+      name: metrics

@@ -1,0 +1,199 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: elastiflix-backend
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - elastiflix
+  selector:
+    matchLabels:
+      app: backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - infra
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: elastiflix-backend
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: elastiflix.backend
+      rules:
+        - alert: ElastiflixBackendMetricsMissing
+          expr: absent(up{namespace="elastiflix", service="backend"})
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Elastiflix backend metrics are not being scraped
+            description: Prometheus has not discovered a healthy backend metrics target for five minutes.
+        - alert: ElastiflixBackendErrorRateHigh
+          expr: |
+            sum(rate(elastiflix_errors_total[5m]))
+              / clamp_min(sum(rate(elastiflix_http_requests_total[5m])), 0.001) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Elastiflix backend error rate is above five percent
+            description: The five-minute application error ratio exceeded 5%.
+    - name: elastiflix.infra
+      rules:
+        - alert: RedisUnavailable
+          expr: elastiflix_redis_up == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: Redis is unavailable
+            description: The backend's Redis INFO probe cannot reach the authenticated Redis service.
+        - alert: RabbitMQUnavailable
+          expr: up{namespace="infra", service="rabbitmq", endpoint="metrics"} == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: RabbitMQ metrics endpoint is unavailable
+            description: Prometheus cannot scrape the RabbitMQ Prometheus plugin.
+        - alert: RabbitMQQueueDepthHigh
+          expr: sum(rabbitmq_queue_messages) > 1000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: RabbitMQ queue depth is high
+            description: More than 1000 queued and unacknowledged messages have persisted for ten minutes.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastiflix-backend-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  elastiflix-backend.json: |-
+    {
+      "uid": "elastiflix-backend",
+      "title": "Elastiflix Backend",
+      "tags": ["elastiflix", "application"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "HTTP requests per second",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(elastiflix_http_requests_total[5m]))", "legendFormat": "requests/s"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Search requests per second",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(elastiflix_search_requests_total[5m]))", "legendFormat": "searches/s"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Application errors per second",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(elastiflix_errors_total[5m]))", "legendFormat": "errors/s"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Cache hits per second",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(elastiflix_cache_hits_total[5m]))", "legendFormat": "hits/s"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastiflix-infrastructure-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  elastiflix-infrastructure.json: |-
+    {
+      "uid": "elastiflix-infrastructure",
+      "title": "Elastiflix Infrastructure",
+      "tags": ["elastiflix", "infrastructure"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Redis memory used",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "elastiflix_redis_memory_used_bytes", "legendFormat": "Redis bytes"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Redis connected clients",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "elastiflix_redis_connected_clients", "legendFormat": "clients"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "RabbitMQ queue depth",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rabbitmq_queue_messages)", "legendFormat": "queued + unacked"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "RabbitMQ open connections",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "rabbitmq_connections", "legendFormat": "connections"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+        }
+      ]
+    }

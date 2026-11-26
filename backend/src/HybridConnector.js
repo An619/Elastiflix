@@ -1,9 +1,10 @@
 import ElasticsearchAPIConnector from "@elastic/search-ui-elasticsearch-connector";
+import { secretValue } from "./secretValue.js";
 
 const HybridConnector = new ElasticsearchAPIConnector({
-  host: process.env.ES_HOST,
-  index: process.env.ES_INDEX,
-  apiKey: process.env.ES_API_KEY
+  host: process.env.ES_HOST || "http://localhost:9200",
+  index: process.env.ES_INDEX || "elastiflix-movies",
+  apiKey: secretValue("ES_API_KEY")
 },(requestBody, requestState, queryConfig) => {
 
   if (!requestState.searchTerm) return requestBody;

@@ -19,9 +19,53 @@ spec:
       labels:
         app: frontend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: an619/elastiflix-frontend:latest
-          imagePullPolicy: IfNotPresent
+          image: an619/elastiflix-frontend:2e6b726fa47344510ed5d5c3d97fb0da28d6372b@sha256:7f3292aecdf6755727281c9a7b54350e2d082b95cdcfd1c2831127dfe62d9e25
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}

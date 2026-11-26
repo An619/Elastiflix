@@ -9,6 +9,41 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+: "${REDIS_PASSWORD:?Set REDIS_PASSWORD to a unique random value of at least 32 characters before starting the demo.}"
+: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD to a unique random value of at least 32 characters before starting the demo.}"
+if (( ${#REDIS_PASSWORD} < 32 || ${#RABBITMQ_PASSWORD} < 32 )); then
+  echo "REDIS_PASSWORD and RABBITMQ_PASSWORD must each be at least 32 characters." >&2
+  exit 1
+fi
+if [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "REDIS_PASSWORD may contain only letters, digits, underscore, or hyphen." >&2
+  exit 1
+fi
+if [[ "$REDIS_PASSWORD" == "$RABBITMQ_PASSWORD" ]]; then
+  echo "Use different passwords for Redis and RabbitMQ." >&2
+  exit 1
+fi
+if [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "REDIS_PASSWORD may contain only letters, digits, underscore, or hyphen." >&2
+  exit 1
+fi
+compose_version="$(docker compose version --short 2>/dev/null || true)"
+if [[ "$compose_version" =~ ^v?([0-9]+)\.([0-9]+)\. ]]; then
+  compose_major="${BASH_REMATCH[1]}"
+  compose_minor="${BASH_REMATCH[2]}"
+else
+  echo "Docker Compose v2.26+ is required for environment-sourced secrets." >&2
+  exit 1
+fi
+if (( compose_major < 2 || (compose_major == 2 && compose_minor < 26) )); then
+  echo "Docker Compose v2.26+ is required for environment-sourced secrets." >&2
+  exit 1
+fi
+
+# Compose maps REDIS_PASSWORD into a file-backed secret; it is not added to
+# the Redis or backend container environment and never appears in CLI args.
+export REDIS_PASSWORD
+
 ES="http://localhost:9200"
 KB="http://localhost:5601"
 
@@ -79,7 +114,14 @@ echo "    $EXPECTED movies indexed"
 # and without it Kibana rejects the data view outright.
 data_view() {
   local id="$1" title="$2" timefield="$3" name="$4"
-  curl -s -X DELETE "$KB/api/data_views/data_view/$id" -H 'kbn-xsrf: true' >/dev/null 2>&1 || true
+  local delete_status
+  delete_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X DELETE "$KB/api/data_views/data_view/$id" \
+    -H 'kbn-xsrf: true')
+  case "$delete_status" in
+    200|204|404) ;; # A missing data view is the expected idempotent case.
+    *) echo "ERROR: deleting data view '$id' returned HTTP $delete_status" >&2; return 1 ;;
+  esac
   curl -fs -X POST "$KB/api/data_views/data_view" \
     -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
     -d "{\"data_view\":{\"id\":\"$id\",\"title\":\"$title\",\"timeFieldName\":\"$timefield\",\"name\":\"$name\",\"allowNoIndex\":true}}" \
@@ -99,7 +141,7 @@ data_view "elastiflix-metrics" "metricbeat-*"      "@timestamp"   "Elastiflix Me
 # still build one live on camera -- these are the safety net, and the "here is
 # where we are going" shot before you start.
 echo "==> Loading the prebuilt dashboards"
-./load-dashboards.sh | grep -v '^==>' || true
+./load-dashboards.sh
 
 cat <<EOF
 

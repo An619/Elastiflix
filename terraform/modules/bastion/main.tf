@@ -18,7 +18,7 @@ resource "aws_security_group" "bastion" {
   description = "Security group for SSM bastion host"
   vpc_id      = var.vpc_id
 
-  # Checkov Fix: Restricted egress and added description
+  # The bastion only needs HTTPS for Systems Manager through the NAT gateway.
   egress {
     from_port   = 443
     to_port     = 443
@@ -63,6 +63,11 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
 
+  # No public IP: the host lives in a private subnet and reaches the SSM
+  # service through the VPC's NAT gateway (see terraform/main.tf).
+  # Session Manager only needs outbound 443.
+  associate_public_ip_address = false
+
   # Checkov Fixes:
   monitoring    = true
   ebs_optimized = true
@@ -77,14 +82,21 @@ resource "aws_instance" "bastion" {
     encrypted   = true
   }
 
+  # Ubuntu 22.04 AMIs may expose the preinstalled SSM agent as a package or
+  # snap unit. Detect either supported name and fail visibly if neither exists.
   user_data = <<-EOF
               #!/bin/bash
-              sudo apt-get update -y
-              sudo apt-get install -y wget
-              wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_arm64/amazon-ssm-agent.deb
-              sudo dpkg -i amazon-ssm-agent.deb
-              sudo systemctl enable amazon-ssm-agent
-              sudo systemctl start amazon-ssm-agent
+              set -Eeuo pipefail
+              if systemctl cat amazon-ssm-agent.service >/dev/null 2>&1; then
+                ssm_unit=amazon-ssm-agent.service
+              elif systemctl cat snap.amazon-ssm-agent.amazon-ssm-agent.service >/dev/null 2>&1; then
+                ssm_unit=snap.amazon-ssm-agent.amazon-ssm-agent.service
+              else
+                echo "amazon-ssm-agent systemd unit not found" >&2
+                exit 1
+              fi
+              systemctl enable --now "$ssm_unit"
+              systemctl is-active --quiet "$ssm_unit"
               EOF
 
   tags = {

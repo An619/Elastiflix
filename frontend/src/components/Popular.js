@@ -53,14 +53,14 @@ function Popular() {
             <h2>Popular movies</h2>
             <div className="row__posters">
               {
-                results.filter(movie => movie.poster_path !== null).map(movie => (
+                results.filter(movie => Boolean(movie.poster_path?.raw)).map(movie => (
                   <img
                     key={movie.id.raw}
                     className="row__poster row__posterLarge"
                     src={`https://image.tmdb.org/t/p/original/${movie.poster_path.raw}`}
                     alt={movie.title.raw}
                     onClick={() => {
-                      window.location.href = `/movie?id=${movie.id.raw}`
+                      window.location.href = `/movie?id=${encodeURIComponent(movie.id.raw)}`
                     }}
                   />
                 ))}

@@ -1,0 +1,313 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1050" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a1022"/>
+      <stop offset="1" stop-color="#060b18"/>
+    </linearGradient>
+    <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121c36"/>
+      <stop offset="1" stop-color="#0c1428"/>
+    </linearGradient>
+    <linearGradient id="nodeGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16223f"/>
+      <stop offset="1" stop-color="#111a33"/>
+    </linearGradient>
+    <linearGradient id="tealNode" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f2b34"/>
+      <stop offset="1" stop-color="#0d1f2e"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset="0.45" stop-color="#ffc94d"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="mainArrow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#ffd479"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <radialGradient id="hexGrad" cx="0.35" cy="0.3" r="1.1">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset="0.5" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </radialGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="1.2" fill="#8caae6" fill-opacity="0.07"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glowCyan" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#22d3ee" flood-opacity="0.55"/>
+    </filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7186b8"/>
+    </marker>
+    <marker id="arrGold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffd479"/>
+    </marker>
+  </defs>
+
+  <!-- ===== canvas ===== -->
+  <rect x="0" y="0" width="1680" height="1050" rx="26" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1680" height="1050" rx="26" fill="url(#grid)"/>
+  <rect x="0.75" y="0.75" width="1678.5" height="1048.5" rx="26" fill="none" stroke="#1e2d4d" stroke-width="1.5"/>
+
+  <!-- ===== header ===== -->
+  <polygon points="134,86 119,112 89,112 74,86 89,60 119,60" fill="url(#hexGrad)" filter="url(#soft)"/>
+  <text x="104" y="92.5" text-anchor="middle" font-size="15" font-weight="800" fill="#3a2503" letter-spacing="1">E</text>
+  <text x="152" y="80" font-size="30" font-weight="800" fill="#eef4ff" letter-spacing="7">ELASTIFLIX</text>
+  <text x="152" y="105" font-size="13.5" fill="#9db1d8">From git push to production traffic — build, secure, ship, observe.</text>
+  <text x="1624" y="66" text-anchor="end" font-size="10" fill="#7288b3" letter-spacing="2">RUNTIME</text>
+  <text x="1624" y="83" text-anchor="end" font-size="12.5" font-weight="600" fill="#cdd9f2">Minikube · AWS EKS</text>
+  <text x="1624" y="104" text-anchor="end" font-size="12.5" font-weight="600" fill="#cdd9f2">Actions CI → Argo CD GitOps</text>
+
+  <!-- ===== STEP 1 panel ===== -->
+  <rect x="40" y="140" width="500" height="706" rx="16" fill="url(#panelGrad)" stroke="#22304f" stroke-width="1.5"/>
+  <rect x="64" y="158" width="196" height="24" rx="12" fill="#0e2a3a" stroke="#1f6f8b"/>
+  <text x="162" y="174" text-anchor="middle" font-size="11.5" font-weight="700" fill="#7fe3f7" letter-spacing="1.4">STEP 1 · BUILD &amp; SECURE</text>
+
+  <!-- developer -->
+  <rect x="70" y="200" width="440" height="58" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="70" y="200" width="5" height="58" rx="2.5" fill="#22d3ee"/>
+  <text x="94" y="225" font-size="15" font-weight="700" fill="#f2f6ff">Developer</text>
+  <text x="94" y="244" font-size="10.5" fill="#93a6d0">writes code · opens PRs against main</text>
+  <rect x="404" y="219" width="82" height="20" rx="10" fill="#33270f" stroke="#8a6d1f"/>
+  <text x="445" y="233" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffd479">git push</text>
+  <line x1="290" y1="258" x2="290" y2="278" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- github -->
+  <rect x="70" y="278" width="440" height="54" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="70" y="278" width="5" height="54" rx="2.5" fill="#22d3ee"/>
+  <text x="94" y="301" font-size="14.5" font-weight="700" fill="#f2f6ff">GitHub Repository</text>
+  <text x="94" y="320" font-size="10.5" fill="#93a6d0">An619/Elastiflix — main is the single source of truth</text>
+  <line x1="290" y1="332" x2="290" y2="352" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- github actions -->
+  <rect x="70" y="352" width="440" height="268" rx="12" fill="#0d1730" stroke="#27395e"/>
+  <text x="84" y="377" font-size="12" font-weight="700" fill="#ffd479">GitHub Actions · devsecops.yml</text>
+  <text x="496" y="377" text-anchor="end" font-size="9.5" fill="#7288b3">PR + main push</text>
+
+  <!-- pipeline rows -->
+  <g font-size="10.5">
+    <rect x="84" y="388" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="395" width="8" height="8" rx="2" fill="#34d399"/>
+    <text x="110" y="403.5"><tspan font-weight="700" fill="#dce6ff">Tests</tspan><tspan fill="#93a6d0"> — jest 13/13 · node --test 26/26 · terraform validate</tspan></text>
+
+    <rect x="84" y="415" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="422" width="8" height="8" rx="2" fill="#34d399"/>
+    <text x="110" y="430.5"><tspan font-weight="700" fill="#dce6ff">Secrets</tspan><tspan fill="#93a6d0"> — Gitleaks on every push &amp; PR</tspan></text>
+
+    <rect x="84" y="442" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="449" width="8" height="8" rx="2" fill="#34d399"/>
+    <text x="110" y="457.5"><tspan font-weight="700" fill="#dce6ff">Dependencies</tspan><tspan fill="#93a6d0"> — npm audit · pip-audit (fail on high)</tspan></text>
+
+    <rect x="84" y="469" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="476" width="8" height="8" rx="2" fill="#34d399"/>
+    <text x="110" y="484.5"><tspan font-weight="700" fill="#dce6ff">Dockerfiles</tspan><tspan fill="#93a6d0"> — Hadolint, prod &amp; dev images</tspan></text>
+
+    <rect x="84" y="496" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="503" width="8" height="8" rx="2" fill="#a78bfa"/>
+    <text x="110" y="511.5"><tspan font-weight="700" fill="#dce6ff">SAST</tspan><tspan fill="#93a6d0"> — SonarCloud Quality Gate, 0 blocking</tspan></text>
+
+    <rect x="84" y="523" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="530" width="8" height="8" rx="2" fill="#f87171"/>
+    <text x="110" y="538.5"><tspan font-weight="700" fill="#dce6ff">Images</tspan><tspan fill="#93a6d0"> — Trivy, CRITICAL/HIGH fails the build</tspan></text>
+
+    <rect x="84" y="550" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
+    <rect x="92" y="557" width="8" height="8" rx="2" fill="#f87171"/>
+    <text x="110" y="565.5"><tspan font-weight="700" fill="#dce6ff">IaC</tspan><tspan fill="#93a6d0"> — Checkov · Terraform hard gate</tspan></text>
+
+    <rect x="84" y="577" width="412" height="22" rx="9" fill="#33270f" fill-opacity="0.65" stroke="#8a6d1f" stroke-opacity="0.8"/>
+    <rect x="92" y="584" width="8" height="8" rx="2" fill="#ffd479"/>
+    <text x="110" y="592.5"><tspan font-weight="700" fill="#ffe4a1">Build &amp; Push</tspan><tspan fill="#d8c289"> — docker/build-push-action, main only</tspan></text>
+  </g>
+  <line x1="290" y1="620" x2="290" y2="640" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- docker hub -->
+  <rect x="70" y="640" width="440" height="58" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63" filter="url(#soft)"/>
+  <rect x="70" y="640" width="5" height="58" rx="2.5" fill="#ffd479"/>
+  <text x="94" y="663" font-size="14.5" font-weight="700" fill="#f2f6ff">Docker Hub</text>
+  <text x="94" y="682" font-size="10.5" fill="#93a6d0">an619/elastiflix-frontend · an619/elastiflix-backend</text>
+  <rect x="404" y="659" width="82" height="20" rx="10" fill="#1b2a4a" stroke="#3a4d7d"/>
+  <text x="445" y="673" text-anchor="middle" font-size="10px" font-weight="700" fill="#a9bcdf">:&lt;git-sha&gt;</text>
+  <text x="290" y="730" text-anchor="middle" font-size="10" fill="#7288b3" font-style="italic">image tag always equals the commit SHA — provenance is built in</text>
+
+  <!-- ===== STEP 2 panel ===== -->
+  <rect x="580" y="140" width="470" height="706" rx="16" fill="url(#panelGrad)" stroke="#22304f" stroke-width="1.5"/>
+  <rect x="604" y="158" width="238" height="24" rx="12" fill="#33270f" stroke="#8a6d1f"/>
+  <text x="723" y="174" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffd479" letter-spacing="1.4">STEP 2 · DELIVER · GITOPS</text>
+
+  <!-- tag bump bot -->
+  <rect x="604" y="200" width="422" height="66" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="604" y="200" width="5" height="66" rx="2.5" fill="#ffd479"/>
+  <text x="628" y="223" font-size="13.5" font-weight="700" fill="#f2f6ff">Image-tag bump (bot)</text>
+  <text x="628" y="241" font-size="10.5" fill="#93a6d0">docker-push rewrites image: fields in</text>
+  <text x="628" y="256" font-size="10.5" fill="#93a6d0">kubernetes/application · commits back [skip ci]</text>
+  <line x1="815" y1="266" x2="815" y2="286" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- manifests -->
+  <rect x="604" y="286" width="422" height="58" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="604" y="286" width="5" height="58" rx="2.5" fill="#ffd479"/>
+  <text x="628" y="309" font-size="13.5" font-weight="700" fill="#f2f6ff">Manifests in Git</text>
+  <text x="628" y="328" font-size="10.5" fill="#93a6d0">Rollout + Deployment · commit SHA tags</text>
+  <line x1="815" y1="344" x2="815" y2="364" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- argo cd -->
+  <rect x="604" y="364" width="422" height="64" rx="12" fill="url(#tealNode)" stroke="#1f6f6b" stroke-width="1.5" filter="url(#soft)"/>
+  <rect x="604" y="364" width="5" height="64" rx="2.5" fill="#34d399"/>
+  <text x="628" y="387" font-size="13.5" font-weight="700" fill="#a9f4d8">Argo CD</text>
+  <text x="628" y="405" font-size="10.5" fill="#7fd7be">auto-sync · selfHeal · prune · targetRevision HEAD</text>
+  <text x="628" y="420" font-size="10.5" fill="#5f9f8e">watches repo — cluster state reconciles to git</text>
+  <line x1="815" y1="428" x2="815" y2="448" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- rollouts -->
+  <rect x="604" y="448" width="422" height="64" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="604" y="448" width="5" height="64" rx="2.5" fill="#a78bfa"/>
+  <text x="628" y="471" font-size="13.5" font-weight="700" fill="#f2f6ff">Argo Rollouts</text>
+  <text x="628" y="489" font-size="10.5" fill="#93a6d0">frontend canary — 20% weight → pause 30s → 100%</text>
+  <text x="628" y="504" font-size="10.5" fill="#93a6d0">bad deploys never see full traffic</text>
+  <line x1="815" y1="512" x2="815" y2="532" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- secrets pair -->
+  <rect x="604" y="532" width="204" height="92" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="604" y="532" width="4" height="92" rx="2" fill="#fbbf24"/>
+  <text x="622" y="554" font-size="12" font-weight="700" fill="#f2f6ff">External Secrets Operator</text>
+  <text x="622" y="573" font-size="9.5" fill="#93a6d0">Redis + RabbitMQ creds</text>
+  <text x="622" y="588" font-size="9.5" fill="#93a6d0">encrypted at rest in git</text>
+  <text x="622" y="603" font-size="9.5" fill="#93a6d0">only the controller can open</text>
+
+  <rect x="822" y="532" width="204" height="92" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="822" y="532" width="4" height="92" rx="2" fill="#fbbf24"/>
+  <text x="840" y="554" font-size="12" font-weight="700" fill="#f2f6ff">External Secrets</text>
+  <text x="840" y="573" font-size="9.5" fill="#93a6d0">AWS Secrets Manager</text>
+  <text x="840" y="588" font-size="9.5" fill="#93a6d0">synced by ESO</text>
+  <text x="840" y="603" font-size="9.5" fill="#93a6d0">IRSA — no static keys (EKS)</text>
+
+  <!-- why gitops quote card -->
+  <rect x="604" y="640" width="422" height="64" rx="12" fill="#141f38" stroke="#31456f" stroke-dasharray="5 4"/>
+  <rect x="604" y="640" width="5" height="64" rx="2.5" fill="#ffd479"/>
+  <text x="628" y="663" font-size="10" font-weight="700" fill="#ffd479" letter-spacing="1.6">WHY GITOPS</text>
+  <text x="628" y="681" font-size="10.5" fill="#b8c7e8" font-style="italic">Git is the only source of truth.</text>
+  <text x="628" y="696" font-size="10.5" fill="#8ea3d0" font-style="italic">The cluster reconciles itself — drift auto-heals.</text>
+
+  <!-- argo apps list -->
+  <text x="604" y="726" font-size="9.5" font-weight="700" fill="#7288b3" letter-spacing="1.6">ARGO CD APPLICATIONS</text>
+  <text x="604" y="744" font-size="10" fill="#8ea3d0">argocd-app.yaml <tspan fill="#5f7298">(this app)</tspan> · argocd-infra.yaml <tspan fill="#5f7298">(redis/rabbitmq)</tspan></text>
+  <text x="604" y="761" font-size="10" fill="#8ea3d0">argocd-elk.yaml <tspan fill="#5f7298">(elastic-stack)</tspan> · argocd-aws-secrets.yaml</text>
+  <text x="604" y="778" font-size="10" fill="#8ea3d0">argocd-monitoring.yaml <tspan fill="#5f7298">(kube-prometheus-stack 58.2.2)</tspan> · monitoring-network-policy.yaml</text>
+
+  <!-- B → C handshake arrow -->
+  <line x1="1050" y1="396" x2="1108" y2="396" stroke="url(#mainArrow)" stroke-width="3.5" marker-end="url(#arrGold)" filter="url(#glowCyan)"/>
+  <text x="1079" y="384" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ffd479">sync</text>
+
+  <!-- ===== STEP 3 panel ===== -->
+  <rect x="1090" y="140" width="550" height="706" rx="16" fill="url(#panelGrad)" stroke="#22304f" stroke-width="1.5"/>
+  <rect x="1114" y="158" width="252" height="24" rx="12" fill="#0e2f2a" stroke="#1f8b74"/>
+  <text x="1240" y="174" text-anchor="middle" font-size="11.5" font-weight="700" fill="#6ff5d2" letter-spacing="1.4">STEP 3 · RUN · KUBERNETES</text>
+
+  <!-- ingress -->
+  <rect x="1114" y="200" width="502" height="54" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="1114" y="200" width="5" height="54" rx="2.5" fill="#34d399"/>
+  <text x="1138" y="222" font-size="13" font-weight="700" fill="#f2f6ff">NGINX Ingress</text>
+  <text x="1138" y="240" font-size="10.5" fill="#93a6d0">elastiflix.local → frontend · api.elastiflix.local → backend</text>
+  <line x1="1365" y1="254" x2="1365" y2="274" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- frontend -->
+  <rect x="1114" y="274" width="502" height="50" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="1114" y="274" width="5" height="50" rx="2.5" fill="#34d399"/>
+  <text x="1138" y="295" font-size="13" font-weight="700" fill="#f2f6ff">Frontend — React 18 · @elastic/eui · nginx</text>
+  <text x="1138" y="313" font-size="10.5" fill="#93a6d0">static build · non-root (uid 101) · 2 replicas · canary</text>
+  <line x1="1365" y1="324" x2="1365" y2="344" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- backend -->
+  <rect x="1114" y="344" width="502" height="66" rx="12" fill="url(#tealNode)" stroke="#1f6f6b" stroke-width="1.5" filter="url(#soft)"/>
+  <rect x="1114" y="344" width="5" height="66" rx="2.5" fill="#22d3ee"/>
+  <text x="1138" y="366" font-size="13" font-weight="700" fill="#a9ecff">Backend — Node 22 · Express (ESM)</text>
+  <text x="1138" y="384" font-size="10.5" fill="#7fd0e8">/api/search · /api/autocomplete · /api/rerank · /semantic · /hybrid</text>
+  <text x="1138" y="400" font-size="10.5" fill="#5f9fb4">GET /metrics (Prometheus) · /healthz · structured JSON logs</text>
+
+  <!-- fan arrows to data tier -->
+  <line x1="1240" y1="410" x2="1196" y2="438" stroke="#7186b8" stroke-width="1.8" marker-end="url(#arr)"/>
+  <line x1="1365" y1="410" x2="1366" y2="438" stroke="#7186b8" stroke-width="1.8" marker-end="url(#arr)"/>
+  <line x1="1490" y1="410" x2="1536" y2="438" stroke="#7186b8" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- redis -->
+  <rect x="1114" y="438" width="160" height="96" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="1114" y="438" width="160" height="4" rx="2" fill="#f87171"/>
+  <text x="1194" y="462" text-anchor="middle" font-size="12.5" font-weight="700" fill="#f2f6ff">Redis 7</text>
+  <text x="1194" y="480" text-anchor="middle" font-size="9.5" fill="#93a6d0">response cache</text>
+  <text x="1194" y="495" text-anchor="middle" font-size="9.5" fill="#93a6d0">SHA-256 key · TTL 300s</text>
+  <text x="1194" y="510" text-anchor="middle" font-size="9.5" fill="#5f7298">optional · degrades cleanly</text>
+
+  <!-- rabbitmq -->
+  <rect x="1286" y="438" width="160" height="96" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
+  <rect x="1286" y="438" width="160" height="4" rx="2" fill="#fb923c"/>
+  <text x="1366" y="462" text-anchor="middle" font-size="12.5" font-weight="700" fill="#f2f6ff">RabbitMQ 3</text>
+  <text x="1366" y="480" text-anchor="middle" font-size="9.5" fill="#93a6d0">search_events queue</text>
+  <text x="1366" y="495" text-anchor="middle" font-size="9.5" fill="#93a6d0">24h TTL · max 10k msgs</text>
+  <text x="1366" y="510" text-anchor="middle" font-size="9.5" fill="#5f7298">feeds analytics panels</text>
+
+  <!-- elasticsearch -->
+  <rect x="1458" y="438" width="158" height="96" rx="12" fill="url(#nodeGrad)" stroke="#1f8b74" stroke-width="1.5"/>
+  <rect x="1458" y="438" width="158" height="4" rx="2" fill="#00bfb3"/>
+  <text x="1537" y="462" text-anchor="middle" font-size="12" font-weight="700" fill="#7df2e4">Elasticsearch 9.1</text>
+  <text x="1537" y="480" text-anchor="middle" font-size="9.5" fill="#93a6d0">elastiflix-movies</text>
+  <text x="1537" y="495" text-anchor="middle" font-size="9.5" fill="#93a6d0">lexical · semantic · hybrid</text>
+  <text x="1537" y="510" text-anchor="middle" font-size="9.5" fill="#93a6d0">rerank · ELSER / E5</text>
+
+  <!-- observe & operate -->
+  <rect x="1114" y="550" width="502" height="180" rx="12" fill="#0d1730" stroke="#27395e"/>
+  <text x="1128" y="576" font-size="9.5" font-weight="700" fill="#7288b3" letter-spacing="1.8">OBSERVE &amp; OPERATE</text>
+
+  <g font-size="10" fill="#b8c7e8">
+    <circle cx="1136" cy="605" r="3.2" fill="#22d3ee"/>
+    <text x="1150" y="609">Filebeat → Logstash <tspan fill="#7288b3">(:5044)</tspan></text>
+    <circle cx="1136" cy="633" r="3.2" fill="#22d3ee"/>
+    <text x="1150" y="637">Logstash → Elasticsearch <tspan fill="#7288b3">(logs-*)</tspan></text>
+    <circle cx="1136" cy="661" r="3.2" fill="#22d3ee"/>
+    <text x="1150" y="665">Kibana — movies / logs / infra</text>
+    <circle cx="1136" cy="689" r="3.2" fill="#22d3ee"/>
+    <text x="1150" y="693">Index templates auto-installed</text>
+
+    <circle cx="1400" cy="605" r="3.2" fill="#ffd479"/>
+    <text x="1414" y="609">Prometheus scrape :17700</text>
+    <circle cx="1400" cy="633" r="3.2" fill="#ffd479"/>
+    <text x="1414" y="637">Grafana — cluster dashboards</text>
+    <circle cx="1400" cy="661" r="3.2" fill="#ffd479"/>
+    <text x="1414" y="665">Velero → MinIO <tspan fill="#7288b3">(velero ns)</tspan></text>
+    <circle cx="1400" cy="689" r="3.2" fill="#ffd479"/>
+    <text x="1414" y="693">Metricbeat — container metrics</text>
+  </g>
+  <text x="1365" y="758" text-anchor="middle" font-size="10" fill="#8ea3d0" font-style="italic">Seed once: data-loader/index-data.py bulk-loads movies.json.gz</text>
+
+  <!-- ===== footer ===== -->
+  <rect x="40" y="866" width="1600" height="150" rx="16" fill="#0d1730" stroke="#22304f"/>
+  <text x="64" y="893" font-size="9.5" font-weight="700" fill="#ffd479" letter-spacing="2">SECURED END TO END</text>
+
+  <g font-size="10.5" fill="#cdd9f2">
+    <rect x="64" y="904" width="228" height="30" rx="15" fill="#152242" stroke="#2e4370"/>
+    <circle cx="80" cy="919" r="4" fill="#34d399"/>
+    <text x="92" y="923.5">runAsNonRoot · drop ALL caps</text>
+
+    <rect x="304" y="904" width="222" height="30" rx="15" fill="#152242" stroke="#2e4370"/>
+    <circle cx="320" cy="919" r="4" fill="#22d3ee"/>
+    <text x="332" y="923.5">SHA-pinned GitHub Actions</text>
+
+    <rect x="538" y="904" width="212" height="30" rx="15" fill="#152242" stroke="#2e4370"/>
+    <circle cx="554" cy="919" r="4" fill="#a78bfa"/>
+    <text x="566" y="923.5">SonarCloud Quality Gate</text>
+
+    <rect x="762" y="904" width="196" height="30" rx="15" fill="#152242" stroke="#2e4370"/>
+    <circle cx="778" cy="919" r="4" fill="#fbbf24"/>
+    <text x="790" y="923.5">Local Secrets + AWS ESO</text>
+
+    <rect x="970" y="904" width="252" height="30" rx="15" fill="#152242" stroke="#2e4370"/>
+    <circle cx="986" cy="919" r="4" fill="#f87171"/>
+    <text x="998" y="923.5">Trivy · Checkov · Gitleaks</text>
+  </g>
+
+  <text x="64" y="962" font-size="11.5"><tspan font-weight="700" fill="#dce6ff">Traffic path  </tspan><tspan fill="#93a6d0">User → Ingress → Frontend (nginx) → Backend (Express) → Elasticsearch</tspan></text>
+  <text x="1624" y="962" text-anchor="end" font-size="10.5" font-weight="700" fill="#7288b3" letter-spacing="2.4">ELASTIFLIX · GITOPS DELIVERY</text>
+  <text x="840" y="993" text-anchor="middle" font-size="9.5" fill="#5f7298">Three tiers · React / Node / Elasticsearch 9.1 · Minikube &amp; AWS EKS · images an619/elastiflix-* · github.com/An619/Elastiflix</text>
+</svg>

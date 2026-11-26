@@ -2,16 +2,48 @@ name: Docker and IaC Scans
 on: workflow_call
 
 jobs:
+    trivy-filesystem-scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Scan filesystem dependencies
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  # The frontend lockfile has an exact, time-bound CRA build-toolchain
+                  # policy check in dependency-scan.yml; npm audit covers its runtime tree.
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "1"
+                  ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+
+            - name: Report all HIGH/CRITICAL filesystem findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
+                  severity: "CRITICAL,HIGH"
+
     trivy-image-scan:
         runs-on: ubuntu-latest
         strategy:
             matrix:
                 service: [frontend, backend]
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
             - name: Build ${{ matrix.service }} Image
-              uses: docker/build-push-action@v6
+              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
               with:
                   context: ./${{ matrix.service }}
                   file: ./${{ matrix.service }}/Dockerfile.prod
@@ -20,21 +52,145 @@ jobs:
                   tags: an619/elastiflix-${{ matrix.service }}:latest
 
             - name: Scan ${{ matrix.service }} Image
-              uses: aquasecurity/trivy-action@0.35.0
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
               with:
+                  version: v0.70.0
                   image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
                   format: "table"
                   exit-code: "1"
                   ignore-unfixed: true
                   severity: "CRITICAL,HIGH"
 
-    checkov-terraform-scan:
+            - name: Report all HIGH/CRITICAL image findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
+                  severity: "CRITICAL,HIGH"
+
+    checkov-iac-scan:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
-            - name: Checkov IaC Scan
-              uses: bridgecrewio/checkov-action@master
-              with:
-                  directory: terraform/
-                  framework: terraform
-                  soft_fail: true
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Setup Checkov
+              run: |
+                  python3 -m venv .venv
+                  .venv/bin/pip install --quiet checkov==3.4.10
+            # Terraform gate stays hard. CKV_TF_1 (module sources must be
+            # commit-pinned) is skipped because the registry modules here
+            # are already version-pinned, which is the registry convention
+            # and cannot be expressed as a commit hash.
+            - name: Checkov Terraform Scan
+              run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
+            - name: Set up Buildx for image digest resolution
+              uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+            - name: Resolve candidate Kubernetes image digests (read-only)
+              run: |
+                  # Read the application image refs directly from the manifests:
+                  # main's new images are not published until this job has passed.
+                  mapfile -t app_images < <(.venv/bin/python - <<'PY'
+                  import re
+                  from pathlib import Path
+                  import yaml
+
+                  workloads = {
+                      "kubernetes/application/backend/deployment.yaml": "backend",
+                      "kubernetes/application/frontend/deployment.yaml": "frontend",
+                  }
+                  for manifest, name in workloads.items():
+                      document = yaml.safe_load(Path(manifest).read_text(encoding="utf-8"))
+                      containers = document["spec"]["template"]["spec"]["containers"]
+                      image = next(container["image"] for container in containers if container["name"] == name)
+                      if not re.fullmatch(r"[^@]+@sha256:[a-f0-9]{64}", image):
+                          raise SystemExit(f"{manifest}: application image must be digest-pinned")
+                      print(image)
+                  PY
+                  )
+                  images=(
+                    "${app_images[@]}"
+                    docker.elastic.co/elasticsearch/elasticsearch:9.1.0
+                    docker.elastic.co/kibana/kibana:9.1.0
+                    docker.elastic.co/logstash/logstash:9.1.0
+                    docker.elastic.co/beats/filebeat:9.1.0
+                    python:3.12-alpine
+                    redis:7-alpine
+                    rabbitmq:3-management-alpine
+                  )
+                  summary_file="$(mktemp)"
+                  for image in "${images[@]}"; do
+                    expected_digest=""
+                    image_tag="$image"
+                    if [[ "$image" == *@* ]]; then
+                      image_tag="${image%@*}"
+                      expected_digest="${image##*@}"
+                    fi
+                    digest="$(docker buildx imagetools inspect "$image_tag" | awk '$1 == "Digest:" { print $2; exit }')"
+                    if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                      echo "Unable to resolve an OCI digest for $image_tag" >&2
+                      exit 1
+                    fi
+                    if [[ -n "$expected_digest" && "$digest" != "$expected_digest" ]]; then
+                      echo "Manifest digest does not match the published tag for $image_tag: expected $expected_digest, got $digest" >&2
+                      exit 1
+                    fi
+                    reference="${image_tag%:*}@${digest}"
+                    printf '%s\n' "- \`$reference\`" >> "$summary_file"
+                    echo "::notice title=Resolved immutable image::$reference"
+                  done
+                  {
+                    echo "### Candidate immutable Kubernetes image references"
+                    cat "$summary_file"
+                  } >> "$GITHUB_STEP_SUMMARY"
+            # Keep JSON output and a findings summary, but fail the gate if any
+            # unsuppressed Kubernetes checks or YAML parsing errors remain.
+            - name: Checkov Kubernetes Scan
+              run: |
+                  .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail \
+                    --output json --output-file-path /tmp/checkov-kubernetes
+                  .venv/bin/python - <<'PY'
+                  import json
+                  import os
+                  from collections import Counter
+                  from pathlib import Path
+
+                  import yaml
+
+                  report = json.loads(Path("/tmp/checkov-kubernetes/results_json.json").read_text())
+                  results = report.get("results", {})
+                  failed = results.get("failed_checks", [])
+                  passed = results.get("passed_checks", [])
+                  skipped = results.get("skipped_checks", [])
+                  counts = report.get("summary", {})
+                  by_check = Counter((item.get("check_id", "unknown"), item.get("check_name", "")) for item in failed)
+                  summary = [
+                      "### Kubernetes Checkov hard gate",
+                      f"Passed: {counts.get('passed', len(passed))} · Failed: {counts.get('failed', len(failed))} · Skipped: {counts.get('skipped', len(skipped))} · Parse errors: {counts.get('parsing_errors', 0)}",
+                      "",
+                      "| Check | Findings | Policy |",
+                      "| --- | ---: | --- |",
+                  ]
+                  summary.extend(
+                      f"| `{check_id}` | {count} | {name} |"
+                      for (check_id, name), count in sorted(by_check.items())
+                  )
+                  exceptions = []
+                  for manifest in Path("kubernetes").rglob("*.yaml"):
+                      with manifest.open(encoding="utf-8") as source:
+                          for resource in yaml.safe_load_all(source):
+                              if not isinstance(resource, dict):
+                                  continue
+                              annotations = resource.get("metadata", {}).get("annotations", {})
+                              value = annotations.get("checkov.io/skip") if isinstance(annotations, dict) else None
+                              if value:
+                                  check_id, _, reason = value.partition("=")
+                                  exceptions.append(f"- `{check_id}` — {reason} ({manifest})")
+                  if exceptions:
+                      summary.extend(["", "**Documented exceptions:**", *exceptions])
+                  with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+                      output.write("\n".join(summary) + "\n")
+                  if failed or counts.get("parsing_errors", 0):
+                      raise SystemExit("Kubernetes Checkov hard gate failed; resolve findings and parse errors above.")
+                  PY

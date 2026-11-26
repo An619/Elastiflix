@@ -9,6 +9,8 @@ spec:
     repoURL: "https://github.com/An619/Elastiflix.git"
     targetRevision: HEAD
     path: kubernetes/infra
+    directory:
+      exclude: "*-sealedsecret.yaml"
   destination:
     server: "https://kubernetes.default.svc"
     namespace: infra

@@ -63,7 +63,9 @@ export function logged(searchType, handler) {
 
       // Upstream has no try/catch at all, so an ES failure becomes an
       // unhandled rejection and the client just hangs.
-      res.status(500).json({ error: "search_failed", message: err?.message });
+      // Do NOT leak err.message to the client (internal ES details);
+      // full detail stays in the structured log line above.
+      res.status(500).json({ error: "search_failed" });
     }
   };
 }

@@ -3,9 +3,13 @@ name: Enterprise DevSecOps Pipeline
 on:
     push:
         branches: [main]
+    pull_request:
+        branches: [main]
 
+# Read-only by default. Only the image-publishing job receives the
+# permissions it needs; CI validation jobs must not mutate the repository.
 permissions:
-    contents: write
+    contents: read
 
 jobs:
     code-tests:
@@ -13,6 +17,9 @@ jobs:
 
     secret-scanning:
         uses: ./.github/workflows/secret-scanning.yml
+        permissions:
+            contents: read
+            pull-requests: read
 
     dependency-checks:
         uses: ./.github/workflows/dependency-scan.yml
@@ -21,14 +28,24 @@ jobs:
         uses: ./.github/workflows/code-quality.yml
 
     sonar-qube:
+        # Forked PRs do not receive repository secrets; skip this secret-backed
+        # analysis there while keeping it enabled on pushes and same-repo PRs.
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: ./.github/workflows/sonar-scan.yml
-        secrets: inherit
+        permissions:
+            contents: read
+            pull-requests: read
+        secrets:
+            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     docker-checks:
         uses: ./.github/workflows/docker-scans.yml
-        secrets: inherit
 
     docker-push:
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        permissions:
+            contents: read
+            id-token: write
         needs:
             [
                 code-tests,
@@ -39,4 +56,6 @@ jobs:
                 docker-checks,
             ]
         uses: ./.github/workflows/docker-push.yml
-        secrets: inherit
+        secrets:
+            DOCKER_HUB_USER: ${{ secrets.DOCKER_HUB_USER }}
+            DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}

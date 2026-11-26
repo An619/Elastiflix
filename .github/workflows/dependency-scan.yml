@@ -5,12 +5,28 @@ jobs:
     npm-audit:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
             - name: Setup Node.js
-              uses: actions/setup-node@v5
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
               with:
                   node-version: "22"
+            - name: Test npm audit exception policy
+              run: node --test scripts/test/npm-audit-policy.test.js
+            - name: Full frontend audit with exact, expiring exceptions
+              run: npm --prefix backend run audit:policy -- frontend
+            - name: Ensure backend audit has no unexcepted or stale policy entries
+              run: npm --prefix backend run audit:policy -- backend
             - name: Audit Backend
               run: |
                   cd backend
-                  npm audit --audit-level=high || true
+                  npm audit --audit-level=high
+            - name: Audit Frontend
+              run: |
+                  cd frontend
+                  # react-scripts/sass are devDependencies (build-only); audit the
+                  # production dependency tree that actually ships.
+                  npm audit --omit=dev --audit-level=high
+            - name: Audit Python Dependencies
+              run: |
+                  python3 -m pip install --disable-pip-version-check --no-input --only-binary=:all: pip-audit==2.10.1
+                  pip-audit -r data-loader/pip-requirements.txt

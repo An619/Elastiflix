@@ -26,10 +26,12 @@ Requirements: Docker Desktop with **at least 8 GB** allocated (Settings → Reso
 12 GB is comfortable), and Python 3.
 
 ```bash
-git clone https://github.com/LondheShubham153/Elastiflix.git
+git clone https://github.com/An619/Elastiflix.git
 cd Elastiflix
-git checkout elk-one-shot
+git checkout main
 
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 ./start.sh
 ```
 

@@ -14,12 +14,21 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: elasticsearch
-          image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1
+          image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0@sha256:47f91984aa1065d745f0a7c827bc912ea1ac439c635854902b65b6ed77f62055
+          imagePullPolicy: Always
           ports:
             - containerPort: 9200
-              name: http
+              name: https
             - containerPort: 9300
               name: transport
           env:
@@ -27,12 +36,31 @@ spec:
               value: single-node
             - name: ES_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-bootstrap
+                  key: elastic-password
             - name: xpack.security.enabled
-              value: "false"
+              value: "true"
             - name: xpack.security.transport.ssl.enabled
-              value: "false"
+              value: "true"
+            - name: xpack.security.transport.ssl.verification_mode
+              value: certificate
+            - name: xpack.security.transport.ssl.key
+              value: /usr/share/elasticsearch/config/certs/tls.key
+            - name: xpack.security.transport.ssl.certificate
+              value: /usr/share/elasticsearch/config/certs/tls.crt
+            - name: xpack.security.transport.ssl.certificate_authorities
+              value: /usr/share/elasticsearch/config/certs/ca.crt
             - name: xpack.security.http.ssl.enabled
-              value: "false"
+              value: "true"
+            - name: xpack.security.http.ssl.key
+              value: /usr/share/elasticsearch/config/certs/tls.key
+            - name: xpack.security.http.ssl.certificate
+              value: /usr/share/elasticsearch/config/certs/tls.crt
+            - name: xpack.security.http.ssl.certificate_authorities
+              value: /usr/share/elasticsearch/config/certs/ca.crt
           resources:
             requests:
               cpu: "250m"
@@ -40,18 +68,63 @@ spec:
             limits:
               cpu: "1000m"
               memory: "2Gi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - |
+                  curl --fail --silent --show-error --cacert /usr/share/elasticsearch/config/certs/ca.crt \
+                    --user "elastic:$(cat /run/secrets/elasticsearch/elastic-password)" \
+                    https://localhost:9200/ >/dev/null
+            initialDelaySeconds: 60
+            periodSeconds: 20
           readinessProbe:
             exec:
               command:
                 - bash
                 - -c
                 - |
-                  curl -s http://localhost:9200/_cluster/health | grep -qE '"status":"(green|yellow)"'
+                  curl --fail --silent --cacert /usr/share/elasticsearch/config/certs/ca.crt \
+                    --user "elastic:$(cat /run/secrets/elasticsearch/elastic-password)" \
+                    https://localhost:9200/_cluster/health | grep -qE '"status":"(green|yellow)"'
             initialDelaySeconds: 30
             periodSeconds: 10
           volumeMounts:
             - name: data
               mountPath: /usr/share/elasticsearch/data
+            - name: elasticsearch-logs
+              mountPath: /usr/share/elasticsearch/logs
+            - name: elasticsearch-tmp
+              mountPath: /tmp
+            - name: elasticsearch-tls
+              mountPath: /usr/share/elasticsearch/config/certs
+              readOnly: true
+            - name: elasticsearch-bootstrap
+              mountPath: /run/secrets/elasticsearch
+              readOnly: true
+      volumes:
+        - name: elasticsearch-logs
+          emptyDir: {}
+        - name: elasticsearch-tmp
+          emptyDir: {}
+        - name: elasticsearch-tls
+          secret:
+            secretName: elasticsearch-tls
+        - name: elasticsearch-bootstrap
+          secret:
+            secretName: elasticsearch-bootstrap
+            items:
+              - key: elastic-password
+                path: elastic-password
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -71,5 +144,5 @@ spec:
     app: elasticsearch
   ports:
     - port: 9200
-      name: http
+      name: https
       targetPort: 9200

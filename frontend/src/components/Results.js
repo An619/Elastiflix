@@ -1,4 +1,4 @@
-import { withSearch, Facet } from "@elastic/react-search-ui";
+import { withSearch, Facet, Paging } from "@elastic/react-search-ui";
 import {
     EuiFlexGroup,
     EuiFlexItem,
@@ -42,6 +42,8 @@ function Results({ results, totalResults, isLoading }) {
                             )
                         })}
                     </EuiFlexGroup>
+                    <EuiSpacer />
+                    <Paging />
                 </EuiFlexItem>
             </EuiFlexGroup> :
             <div className="no-results">
@@ -50,7 +52,6 @@ function Results({ results, totalResults, isLoading }) {
 
     );
 }
-
 
 export default withSearch(({ results, totalResults, isLoading }) => ({
     results, totalResults, isLoading

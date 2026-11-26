@@ -1,31 +1,13 @@
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.4"
+# NOTE: The EKS cluster itself is defined in main.tf (module "eks").
+# This file only holds the ESO IRSA role. Do NOT declare a second
+# module "eks" here — Terraform fails with "Duplicate module call".
 
-  cluster_name    = "${var.cluster_name}-eks"
-  cluster_version = "1.30"
-
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = module.vpc.private_subnets
-  control_plane_subnet_ids = module.vpc.private_subnets
-
-  cluster_endpoint_public_access = true
-  enable_irsa                    = true
-
-  eks_managed_node_groups = {
-    main = {
-      instance_types = ["t3.medium"]
-      min_size       = 2
-      max_size       = 3
-      desired_size   = 2
-    }
-  }
-}
+data "aws_caller_identity" "current" {}
 
 # IAM Role for External Secrets Operator (ESO)
 module "eso_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.60.0"
 
   role_name = "${var.cluster_name}-eso-role"
 
@@ -44,7 +26,7 @@ resource "aws_iam_policy" "eso_policy" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-      Resource = "*"
+      Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:elastiflix/*"
     }]
   })
 }

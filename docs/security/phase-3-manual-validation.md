@@ -75,7 +75,7 @@ Confirm container logs arrive in Elasticsearch and Kibana. Elasticsearch HTTP an
 
 ## 6. AWS-only ingress and External Secrets
 
-Before enabling AWS ingress, the operator must supply an approved ACM certificate ARN and DNS hostname. Add them to `kubernetes/aws/ingress-aws.yaml`, verify the DNS record and ALB subnet/security-group assumptions, and review the plan/change request. Only then, with explicit approval, register the Application:
+The AWS demo Ingress uses an internet-facing HTTP listener and AWS's generated ALB DNS name, so no custom/private DNS hostname or ACM certificate is required. Because this publishes unencrypted traffic to the internet, register it only after explicit approval for non-sensitive demo use. For production, first add an approved ACM certificate and DNS hostname and configure HTTPS in `kubernetes/aws/ingress-aws.yaml`.
 
 ```bash
 kubectl apply -f kubernetes/argocd-aws-ingress.yaml

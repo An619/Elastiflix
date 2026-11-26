@@ -7,3 +7,4 @@ resources:
   - argocd-monitoring.yaml
   - argocd-monitoring-network-policy.yaml
   - argocd-aws-secrets.yaml
+  - argocd-aws-storage.yaml

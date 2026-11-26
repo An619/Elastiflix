@@ -72,6 +72,10 @@ jobs:
               run: |
                   terraform -chdir=terraform/backend-bootstrap init -backend=false
                   terraform -chdir=terraform/backend-bootstrap validate
+            - name: Initialize and validate FinOps budget configuration
+              run: |
+                  terraform -chdir=terraform/finops init -backend=false
+                  terraform -chdir=terraform/finops validate
             - name: Validate Ansible playbook syntax
               run: |
                   python3 -m venv /tmp/ansible-venv

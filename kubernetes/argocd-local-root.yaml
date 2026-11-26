@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/An619/Elastiflix.git
-    targetRevision: main
+    targetRevision: arena/90ec80bf-elastiflix
     path: kubernetes/gitops/local
   destination:
     server: https://kubernetes.default.svc

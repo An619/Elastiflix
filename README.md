@@ -36,7 +36,7 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 3. CI reports the published image references but does **not** mutate the GitOps configuration. A maintainer proposes the new image tags in a reviewed manifest change.
 4. **Argo CD** watches the configured repository paths (automated sync + `selfHeal` + `prune`) and converges the cluster after the reviewed manifest change is merged.
 5. The frontend Rollout now declares stable/canary Services, progressive traffic weights (**10% → 25% → 50% → 100%**) and a Prometheus AnalysisTemplate. Minikube uses the NGINX traffic router; EKS uses the ALB router. Runtime controller compatibility and controlled-abort behavior remain to be validated.
-6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend in Minikube. The separate EKS ALB Ingress remains gated on approved ACM certificate and DNS values.
+6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend in Minikube. EKS can expose the app through an internet-facing ALB's AWS-generated DNS name over HTTP; no custom DNS hostname or ACM certificate is required. This is a temporary/demo configuration, not production HTTPS.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
 8. **Observability components** include Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs and kube-prometheus-stack for metrics. Alertmanager remains disabled pending an approved receiver; `minio.yaml` is not a complete backup solution and Velero schedules/restore automation are not configured.
 
@@ -120,7 +120,7 @@ Elastiflix is a **3-tier movie-search reference application** (React · Node.js 
 
 | Tool | Used for |
 |---|---|
-| **Terraform** | AWS: VPC, **EKS** (private managed nodes and private API by default), IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTPS-only egress), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
+| **Terraform** | AWS: VPC, **EKS** (private managed nodes and private API by default), CoreDNS/kube-proxy/VPC CNI add-ons, EBS CSI add-on with dedicated IRSA, IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTPS-only egress), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
 | **Ansible** | EKS bootstrap: namespaces/PSA labels → Argo CD → Argo Rollouts → ESO (IRSA) → AWS Load Balancer Controller → GitOps Application registration |
 | **AWS** | EKS, EC2 bastion, IAM/IRSA, Secrets Manager, VPC/NAT, ALB |
 | **kubeseal** | Not used by the current environment-specific secret path; local credentials are generated at bootstrap and EKS credentials are synced through ESO |
@@ -154,17 +154,18 @@ See [README-ELK.md](README-ELK.md) for the Elastic Stack walkthrough and [LEARN.
 ### 2. Minikube + GitOps (local Kubernetes)
 
 ```bash
-export REDIS_PASSWORD="$(openssl rand -hex 32)"
-export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
-./bootstrap.sh            # minikube + pinned Argo CD/Rollouts/Falco + GitOps apps
-minikube tunnel           # in a separate admin shell, if required for Ingress
+./bootstrap.sh            # one command: start Minikube, install controllers, sync apps, and wait for readiness
+minikube tunnel           # optional, in a separate admin shell, only if required by your driver for Ingress
 ```
 
-The bootstrap rejects missing, short, reused passwords, and Redis values outside letters/digits/underscore/hyphen; it writes them through short-lived mode-0600 files into Minikube Secrets and never commits or prints them. Argo CD stays on TLS and uses its generated initial admin password; connect only with `kubectl -n argocd port-forward svc/argocd-server 8080:443` and retrieve the password from `argocd-initial-admin-secret`. The app remains at `http://elastiflix.local`; local development ingress is not production TLS. Kibana and Grafana have no Ingress resources; access them with `kubectl -n elastic-stack port-forward svc/kibana 5601:5601` and `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`.
+The bootstrap creates strong Redis/RabbitMQ passwords automatically on first run and saves them in ignored, mode-0600 local files under `.secrets/minikube`; it reuses existing local or Kubernetes Secret values on reruns and refuses implicit credential rotation. Keep `.secrets/minikube` and `.secrets/elasticsearch` private and backed up. Argo CD automatically syncs the local App-of-Apps and child Applications; the script exits successfully only after the apps are Synced/Healthy and workload rollouts/endpoints are ready. Argo CD stays on TLS and uses its generated initial admin password; access it only if needed with `kubectl -n argocd port-forward svc/argocd-server 8080:443` and retrieve the password from `argocd-initial-admin-secret`. The app remains at `http://elastiflix.local`; local development ingress is not production TLS. Kibana and Grafana have no Ingress resources; access them with `kubectl -n elastic-stack port-forward svc/kibana 5601:5601` and `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`.
+
 
 ### 3. AWS EKS (Terraform + Ansible)
 
-AWS deployment is intentionally **not** automatic. Review the network, state-backend, version, and cost assumptions before running any `apply` command. EKS control-plane hours, EC2 nodes/bastion, NAT gateways, ALB, EBS, S3 and DynamoDB may incur charges; check current regional pricing and review a Terraform plan first.
+AWS deployment is intentionally **not** automatic. To stretch your $200 promotional credits, use Minikube for everyday testing and reserve AWS for short, planned integration tests or an interview demo where cloud-specific proof matters. Review the network, state-backend, version, and cost assumptions before running any `apply` command. EKS control-plane hours, EC2 nodes/bastion, NAT gateways, ALB, EBS, S3 and DynamoDB may incur charges; check current regional pricing and the credit's eligibility/expiration, and review a Terraform plan first. Use AWS only for the shortest practical window and follow the approved teardown procedure immediately afterward. Stopping application pods does not stop EKS, NAT, storage, load-balancer, or other infrastructure charges.
+
+For account-level actual and forecasted email alerts, the independent [Phase 7 demo FinOps runbook](docs/runbooks/phase-7-finops-demo-cost-controls.md) describes a Terraform-managed monthly AWS Budget. Configure it with a reviewed account-wide USD threshold and private notification recipients. A budget is an alert, not a spending cap, and account-wide totals may include costs beyond Elastiflix. Karpenter/Spot remains deferred pending a selected EKS minor and staging validation.
 
 Bootstrap the remote-state bucket, KMS key, and lock table only after reviewing `terraform/backend-bootstrap/README.md` and the current AWS costs; first confirm an approved existing audit bucket is configured to receive S3 server access logs. The bootstrap uses local state and creates AWS resources; it has not been run from this repository. Then create private local copies of the dev backend/tfvars examples, set the output bucket/table/KMS key values, choose a supported EKS Kubernetes version, and replace the AZ placeholders with three names verified in the target account and region before initializing/planning the environment explicitly:
 
@@ -176,7 +177,7 @@ terraform -chdir=terraform init -backend-config=environments/dev.backend.hcl
 terraform -chdir=terraform plan -var-file=environments/dev.tfvars -out=dev.tfplan
 ```
 
-The EKS API stays private unless you supply a restricted public CIDR list. Before registering the AWS Ingress Application, add an approved ACM certificate ARN and the service's DNS hostname to `kubernetes/aws/ingress-aws.yaml`; the listener is HTTPS-only and intentionally has no HTTP fallback. After provisioning is explicitly approved, run the bootstrap from a network that can reach the private API and export the actual Terraform outputs:
+The EKS API stays private unless you supply a restricted public CIDR list. Terraform manages the compatible CoreDNS, kube-proxy, and VPC CNI add-ons (with VPC CNI network-policy support) and the EBS CSI add-on through a dedicated IRSA role; the GitOps AWS storage app installs encrypted gp3 as the default StorageClass. Review the add-on plan and confirm EBS quota/region support before applying. Keep `kubernetes/aws/secrets/eso.yaml`'s AWS region aligned with `aws_region` in the selected tfvars, and create the documented Secrets Manager names/properties before syncing the ESO application. The AWS Ingress is configured as an internet-facing, HTTP-only demo endpoint: AWS assigns its public ALB DNS name, so no custom/private DNS hostname or ACM certificate is needed. This publishes the site to the internet without TLS; use only for non-sensitive demo traffic, not production. After provisioning is explicitly approved, run the bootstrap from a network that can reach the private EKS API and export the actual Terraform outputs:
 
 ```bash
 export EKS_CLUSTER_NAME="$(terraform -chdir=terraform output -raw eks_cluster_name)"
@@ -184,11 +185,14 @@ export ALB_CONTROLLER_ROLE_ARN="$(terraform -chdir=terraform output -raw alb_con
 export ESO_ROLE_ARN="$(terraform -chdir=terraform output -raw eso_role_arn)"
 ansible-playbook --syntax-check ansible/playbook.yml
 ansible-playbook ansible/playbook.yml
-# Only after setting the ACM certificate ARN above and approving deployment:
+# Only after approving that this non-production app will be public over HTTP:
 kubectl apply -f kubernetes/argocd-aws-ingress.yaml
+# After the Ingress is healthy, get the AWS-assigned public endpoint:
+kubectl -n elastiflix get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+# Then manually sync the elastiflix workload Application in Argo CD.
 ```
 
-Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), [Phase 6 backup/DR status](docs/security/phase-6-backup-disaster-recovery.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
+Open `http://<AWS-assigned-ALB-hostname>/` after the workload is synced and healthy. The endpoint is public and unencrypted. Reach the private EKS API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. For the end-to-end command sequence and expected results, see the [complete Minikube-to-AWS phase runbook](docs/runbooks/complete-phases-minikube-to-aws.md). See also [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), [Phase 6 backup/DR status](docs/security/phase-6-backup-disaster-recovery.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
 
 ---
 

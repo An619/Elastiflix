@@ -17,7 +17,7 @@ locals {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.8.1" # Pinned version (Fixes Checkov CKV_TF_1)
+  version = "5.8.1" # Pinned; upgrade separately with a reviewed state migration plan
 
   name = "${var.cluster_name}-vpc"
   cidr = "10.0.0.0/16"
@@ -58,18 +58,18 @@ module "bastion" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.4" # Pinned version
+  version = "20.8.4" # Keep the current major until its state migration is reviewed
 
   cluster_name    = "${var.cluster_name}-eks"
   cluster_version = var.cluster_version
 
   # Networking: private endpoint access is always enabled. Public access is
   # enabled only when the operator supplies explicit non-worldwide CIDRs.
-  vpc_id                             = module.vpc.vpc_id
-  subnet_ids                         = module.vpc.private_subnets
-  control_plane_subnet_ids           = module.vpc.private_subnets
-  cluster_endpoint_private_access    = true
-  cluster_endpoint_public_access     = length(var.cluster_endpoint_public_access_cidrs) > 0
+  vpc_id                               = module.vpc.vpc_id
+  subnet_ids                           = module.vpc.private_subnets
+  control_plane_subnet_ids             = module.vpc.private_subnets
+  cluster_endpoint_private_access      = true
+  cluster_endpoint_public_access       = length(var.cluster_endpoint_public_access_cidrs) > 0
   cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
 
   # The private SSM bastion is the default administrative path when public
@@ -85,8 +85,25 @@ module "eks" {
     }
   }
 
-  # Enable IAM roles for service accounts (IRSA)
+  # Enable IAM roles for service accounts (IRSA).
   enable_irsa = true
+
+  # Manage core add-ons explicitly. VPC CNI network-policy support is enabled
+  # because repository NetworkPolicies depend on it. most_recent resolves the
+  # latest add-on compatible with the configured EKS Kubernetes minor version.
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      before_compute       = true
+      most_recent          = true
+      configuration_values = jsonencode({ env = { ENABLE_NETWORK_POLICY = "true" } })
+    }
+  }
 
   # EKS Managed Node Group(s)
   eks_managed_node_groups = {

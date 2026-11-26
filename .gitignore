@@ -10,6 +10,7 @@ elk/data/movies.ndjson
 **/.terraform/
 **/*.tfstate
 **/*.tfstate.*
+*.tfplan
 **/*.tfvars
 **/*.backend.hcl
 *.pem

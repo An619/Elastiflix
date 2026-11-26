@@ -23,8 +23,10 @@ jobs:
                   tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
             - name: Lint GitHub Actions workflows
               run: /tmp/actionlint -color .github/workflows/*.yml
-            - name: Validate bootstrap shell syntax
+            - name: Validate bootstrap and backup script shell syntax
               run: bash -n bootstrap.sh start.sh scripts/*.sh
+            - name: Test Elasticsearch snapshot safeguards with mocked HTTP
+              run: bash scripts/test-elasticsearch-snapshot.sh
             - name: Test Frontend
               run: |
                   cd frontend
@@ -70,6 +72,10 @@ jobs:
               run: |
                   terraform -chdir=terraform/backend-bootstrap init -backend=false
                   terraform -chdir=terraform/backend-bootstrap validate
+            - name: Initialize and validate FinOps budget configuration
+              run: |
+                  terraform -chdir=terraform/finops init -backend=false
+                  terraform -chdir=terraform/finops validate
             - name: Validate Ansible playbook syntax
               run: |
                   python3 -m venv /tmp/ansible-venv

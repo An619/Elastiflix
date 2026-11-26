@@ -1,0 +1,14 @@
+# AWS Budgets API region. This is separate from the EKS stack's region.
+aws_region   = "us-east-1"
+project_name = "elastiflix"
+environment  = "demo"
+
+# Set a reviewed account-wide monthly USD threshold. This is an alert threshold,
+# not a cost estimate or a spending cap. Do not use this example as a recommendation.
+# monthly_budget_amount_usd = 50
+
+# Set recipients only in your private, git-ignored demo.tfvars copy.
+# alert_email_addresses = ["your-approved-address@example.invalid"]
+
+# Both actual and forecasted alerts are generated at every configured threshold.
+alert_threshold_percentages = [25, 50, 75, 100]

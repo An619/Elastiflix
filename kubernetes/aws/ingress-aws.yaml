@@ -6,10 +6,10 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    # Fail closed: no HTTP listener is created. Before syncing this Ingress,
-    # supply the approved ACM certificate ARN and DNS hostname for the service.
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # Public demo endpoint: no custom/private DNS name or ACM certificate is
+    # required. AWS assigns the ALB a public DNS name; traffic is HTTP-only.
+    # Do not use this configuration for production or sensitive traffic.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     alb.ingress.kubernetes.io/healthcheck-path: /
     # Argo Rollouts updates this action to add the canary target group and
     # weighted traffic split during a rollout. Keep the initial route stable.

@@ -17,6 +17,8 @@ spec:
       namespace: elastic-stack
     - server: https://kubernetes.default.svc
       namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
   clusterResourceWhitelist:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
@@ -30,3 +32,5 @@ spec:
       kind: ValidatingWebhookConfiguration
     - group: external-secrets.io
       kind: ClusterSecretStore
+    - group: storage.k8s.io
+      kind: StorageClass

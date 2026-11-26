@@ -1,0 +1,7 @@
+bucket         = "REPLACE_WITH_BOOTSTRAPPED_STATE_BUCKET"
+# Preserve the existing main-root state key for the current dev environment.
+key            = "eks/terraform.tfstate"
+region         = "us-east-2"
+dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE"
+encrypt        = true
+kms_key_id     = "REPLACE_WITH_STATE_KMS_KEY_ARN"

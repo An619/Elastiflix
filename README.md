@@ -14,10 +14,10 @@
 ![Argo CD](https://img.shields.io/badge/Argo_CD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions_CI/CD-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
 
-Elastiflix is a **production-grade, 3-tier movie-search application** (React · Node.js · Elasticsearch) wrapped in a full **DevSecOps + GitOps** delivery pipeline: every commit is tested, scanned, containerized, promoted, and rolled out by declarative manifests — with observability, secrets management, and backups included. It runs the same on a laptop (Docker Compose or Minikube) and on AWS EKS.
+Elastiflix is a **3-tier movie-search reference application** (React · Node.js · Elasticsearch) with DevSecOps and GitOps components. The repository includes local Docker Compose and Minikube paths, plus AWS/EKS scaffolding that still requires validation before it should be described as production-ready. Observability and secrets-management components are present; backup/restore automation is not yet wired end to end.
 
 > **Live traffic path:** User → NGINX Ingress → Frontend (nginx) → Backend (Express) → Elasticsearch
-> **Deployment path:** `git push` → GitHub Actions (test · scan · build) → Docker Hub → bot bumps image tags → Argo CD syncs → Kubernetes (canary)
+> **Deployment path:** `git push` → GitHub Actions (test · scan · build) → Docker Hub (commit-SHA tags) → reviewed GitOps manifest change → Argo CD syncs → Kubernetes
 
 ## 📸 Application Preview
 
@@ -33,12 +33,12 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 
 1. **A developer pushes** to a branch / opens a PR. `devsecops.yml` fans out to parallel gates: code tests, Gitleaks, dependency audits, Hadolint, SonarCloud, Trivy, Checkov.
 2. **On merge to `main`** the same gates go green, then `docker-push` builds both images with `docker/build-push-action` and pushes them to Docker Hub tagged with the **commit SHA** (never `latest`).
-3. The pipeline then **rewrites `image:` fields** in `kubernetes/application/` and commits them back with `[skip ci]`.
-4. **Argo CD** (watching `HEAD` of this repo, automated sync + `selfHeal` + `prune`) detects the manifest diff and converges the cluster to it.
-5. **Argo Rollouts** releases the new frontend gradually: **20% canary → pause 30s → 100%**. A broken build never receives full traffic.
+3. CI reports the published image references but does **not** mutate the GitOps configuration. A maintainer proposes the new image tags in a reviewed manifest change.
+4. **Argo CD** watches the configured repository paths (automated sync + `selfHeal` + `prune`) and converges the cluster after the reviewed manifest change is merged.
+5. The frontend has a basic Argo Rollouts canary step sequence (**20% → pause 30s → 100%**). This configuration has no traffic router or metric-based analysis yet, so it does not guarantee a true 20% traffic split or automatic health-based abort.
 6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
-8. **Observability** is wired in, not bolted on: Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs, Prometheus + Grafana for metrics, Velero + MinIO for backups.
+8. **Observability components** include Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs and kube-prometheus-stack for metrics. Alertmanager is disabled and the backend scrape configuration is incomplete. `minio.yaml` is not a complete backup solution: Velero schedules and restore automation are not configured.
 
 > Search data model: the catalog (`data-loader/movies/movies.json.gz`) is bulk-indexed by `data-loader/index-data.py`, which derives the `user_score` facet from TMDB `vote_average` and pulls ELSER/E5 inference pipelines (`data-loader/config/`) so the same index serves BM25, vector semantic, hybrid, and reranked retrieval.
 
@@ -79,20 +79,20 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 | **Docker Compose** | Local one-shot ELK | Full stack + beats + app in one command (`start.sh`) — the fastest way to hack on this repo |
 | **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, `argocd`, `velero` |
 | **NGINX Ingress Controller** | Edge routing | Host-based rules: app, API, Kibana, Argo CD, Grafana, MinIO |
-| **Argo Rollouts** | Progressive delivery | Frontend canary Rollout: `20% → pause 30s → 100%` with automated analysis hooks |
+| **Argo Rollouts** | Progressive delivery | Frontend has a basic `20% → pause 30s → 100%` step sequence; weighted traffic routing and metric-based analysis are not configured yet |
 | **Helm** | Chart management | Infra values (`helm/elasticsearch`, `helm/redis`, `helm/rabbitmq`) + installs Argo CD, ESO, ALB controller, kube-prometheus-stack |
 
 ### 🔁 GitOps & delivery
 
 | Tool | Used for | Why it's here |
 |---|---|---|
-| **Argo CD** | Continuous delivery | Watches `HEAD` (app-of-apps: `argocd-app/elk/infra/ingress/monitoring.yaml`); automated prune + self-heal — the cluster **pulls**, nothing is `kubectl apply`ed by hand |
-| **Docker Hub** (`an619/elastiflix-*`) | Image registry | Immutable SHA-tagged images; GitOps commits the tag bump |
+| **Argo CD** | Continuous delivery | Separate Application manifests watch configured repository paths with automated prune + self-heal; the local bootstrap initially applies those Application objects with `kubectl` |
+| **Docker Hub** (`an619/elastiflix-*`) | Image registry | Images are published with commit-SHA tags; tag immutability is not enforced at the registry |
 | **Sealed Secrets** | Encrypted secrets in git | Redis/RabbitMQ creds are sealed (`kubernetes/infra/*-sealedsecret.yaml`); only the in-cluster controller can decrypt |
 | **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → K8s Secrets via **IRSA** (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
 | **GitHub Actions** | CI/CD engine | Reusable workflows fanned out by `devsecops.yml`; all third-party actions **pinned to commit SHAs** |
-| **Velero + MinIO** | Backup & restore | Namespace `velero` backs up cluster state to S3-compatible MinIO (`minio.yaml`) |
-| **GitHub → merge bot** | GitOps trigger | `docker-push` pipeline commits updated image tags to `main` (`[skip ci]`) — closing the GitOps loop with zero humans |
+| **MinIO manifest** | Local S3-compatible storage experiment | `minio.yaml` contains a service/deployment, but no Velero schedule, persistent storage, or tested restore workflow |
+| **GitOps promotion** | Deployment change control | CI publishes image references; a maintainer must propose and review manifest updates before Argo CD deploys them |
 
 ### 🛡️ DevSecOps & quality gates
 
@@ -100,11 +100,11 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 |---|---|---|---|
 | Code tests | **Jest (frontend)** · **`node --test` + supertest (backend)** · **`terraform validate`** · **kubeconform** | PR + main | build fails |
 | Secret scanning | **Gitleaks** | PR + main | build fails |
-| Dependency audit | **npm audit** (`--omit=dev`, prod only) · **pip-audit** | PR + main, high+ | build fails |
+| Dependency audit | **npm audit** — frontend full tree with exact, expiring build-toolchain exceptions; frontend production tree and backend at HIGH+ · **pip-audit** | PR + main | build fails |
 | Dockerfile lint | **Hadolint** (prod & dev Dockerfiles) | PR + main | build fails |
 | SAST | **SonarCloud** — Quality Gate: 0 new issues, **≥ 80% coverage on new code**, 0% duplication | PR + main | build fails |
-| Image scan | **Trivy** — CRITICAL/HIGH fixable CVEs | PR + main | build fails |
-| IaC scan | **Checkov** — Terraform **hard gate**; Kubernetes report-only (~105 accepted findings, tracked as tech debt) | PR + main | Terraform: fails · K8s: report |
+| Image / filesystem scan | **Trivy** — blocks fixable CRITICAL/HIGH findings; reports all CRITICAL/HIGH findings, including unfixed | PR + main | build fails |
+| IaC scan | **Checkov** — Terraform **hard gate**; Kubernetes report-only (104 findings in local Checkov 3.4.10 run, tracked as tech debt) | PR + main | Terraform: fails · K8s: report |
 | Action hygiene | **SHA-pinned actions**, minimal `permissions:`, `docker-push` main-only | always | — |
 
 ### 📊 Observability
@@ -219,7 +219,8 @@ CI enforces **≥ 80% coverage on new code** via the SonarCloud Quality Gate.
 - Non-root containers everywhere (`USER node`, nginx-unprivileged), `runAsNonRoot`, `drop: [ALL]` capabilities, `allowPrivilegeEscalation: false`
 - No public IPs on compute; the bastion lives in a **private subnet** and is reached via **AWS SSM** only (443 egress + HTTP/80 strictly for Ubuntu APT)
 - Secrets: **Sealed Secrets** (in-git, encrypted) or **ESO + AWS Secrets Manager (IRSA)** — nothing plaintext in the repo; Gitleaks scans every push
-- Supply chain: **SHA-pinned actions**, prod-only `npm audit`, **Trivy** image gate, **Checkov** IaC gate, **SonarCloud** SAST gate
+- Supply chain: **SHA-pinned actions**, exact expiring frontend build-toolchain exceptions plus production dependency audits, **Trivy** filesystem/image gates, **Checkov** IaC gate, **SonarCloud** SAST gate, and Dependabot updates
+- Published images are configured for BuildKit SBOM/provenance attestations and Cosign signing plus digest verification; SHA tags themselves are not registry-immutable
 - Least-privilege RBAC (`kubernetes/application/rbac`), per-tier namespaces, image tags bound to commit SHAs
 
 ## 📚 Docs

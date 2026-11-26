@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: elastiflix-slo
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: elastiflix.slo.recording
+      interval: 30s
+      rules:
+        - record: elastiflix:http_requests:rate5m
+          expr: sum(rate(elastiflix_http_responses_total{route!="/healthz"}[5m]))
+        - record: elastiflix:http_errors:rate5m
+          expr: sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[5m])) or vector(0)
+        - record: elastiflix:http_error_ratio:rate5m
+          expr: (elastiflix:http_errors:rate5m / clamp_min(elastiflix:http_requests:rate5m, 0.000001)) or vector(0)
+        - record: elastiflix:http_error_ratio:rate1h
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[1h]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[1h])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:http_error_ratio:rate30m
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[30m]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[30m])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:http_error_ratio:rate6h
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[6h]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[6h])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:slo_requests:increase7d
+          expr: sum(increase(elastiflix_http_responses_total{route!="/healthz"}[7d]))
+        - record: elastiflix:slo_errors:increase7d
+          expr: sum(increase(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[7d])) or vector(0)
+        - record: elastiflix:slo_availability:ratio7d
+          expr: 1 - (elastiflix:slo_errors:increase7d / clamp_min(elastiflix:slo_requests:increase7d, 1))
+        - record: elastiflix:slo_error_budget_remaining:ratio7d
+          expr: clamp_min(1 - (elastiflix:slo_errors:increase7d / clamp_min(0.005 * elastiflix:slo_requests:increase7d, 1)), 0)
+    - name: elastiflix.slo.alerts
+      rules:
+        - alert: ElastiflixSLOFastBurn
+          expr: |
+            elastiflix:http_error_ratio:rate5m > 0.072
+            and elastiflix:http_error_ratio:rate1h > 0.072
+            and elastiflix:http_requests:rate5m > 0
+          for: 2m
+          labels:
+            severity: critical
+            slo: availability
+          annotations:
+            summary: Elastiflix is consuming its availability error budget rapidly
+            description: The 99.5% availability SLO has a fast-burn breach (5m and 1h error ratios both exceed 7.2%). Check the backend, Elasticsearch dependency, and recent rollout before rollback.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+        - alert: ElastiflixSLOSlowBurn
+          expr: |
+            elastiflix:http_error_ratio:rate30m > 0.03
+            and elastiflix:http_error_ratio:rate6h > 0.03
+            and elastiflix:http_requests:rate5m > 0
+          for: 15m
+          labels:
+            severity: warning
+            slo: availability
+          annotations:
+            summary: Elastiflix is consuming its availability error budget steadily
+            description: The 99.5% availability SLO has a slow-burn breach (30m and 6h error ratios both exceed 3%). Check dependency health and the availability dashboard.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+        - alert: ElastiflixSLOObjectiveMiss
+          expr: elastiflix:slo_requests:increase7d > 100 and elastiflix:slo_availability:ratio7d < 0.995
+          for: 10m
+          labels:
+            severity: warning
+            slo: availability
+          annotations:
+            summary: Elastiflix is below its proposed rolling 7-day availability objective
+            description: Availability over the rolling seven-day window is below 99.5%. Confirm the observation window is fully populated and review the SLO dashboard and runbook.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md

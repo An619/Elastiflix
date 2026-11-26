@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { secretValue } from "./secretValue.js";
 import SearchConnector from "./SearchConnector.js";
 import RerankConnector from "./RerankConnector.js";
 import SemanticConnector from "./SemanticConnector.js";
@@ -25,25 +26,23 @@ if (process.env.LOCAL) {
     })
   );
 }
-app.use(express.json());
-
-// --- URL helpers: allow password-only envs (K8s Secrets) ---
-function redisUrl() {
+// --- URL helpers: support allowlisted Kubernetes Secret paths or local envs ---
+function redisUrl(readSecretFile) {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
   const host = process.env.REDIS_HOST;
   if (!host) return undefined;
   const port = process.env.REDIS_PORT || "6379";
-  const pass = process.env.REDIS_PASSWORD;
+  const pass = secretValue("REDIS_PASSWORD", readSecretFile);
   return pass ? `redis://:${encodeURIComponent(pass)}@${host}:${port}` : `redis://${host}:${port}`;
 }
 
-function rabbitmqUrl() {
+function rabbitmqUrl(readSecretFile) {
   if (process.env.RABBITMQ_URL) return process.env.RABBITMQ_URL;
   const host = process.env.RABBITMQ_HOST;
   if (!host) return undefined;
   const port = process.env.RABBITMQ_PORT || "5672";
   const user = process.env.RABBITMQ_USER || "user";
-  const pass = process.env.RABBITMQ_PASSWORD;
+  const pass = secretValue("RABBITMQ_PASSWORD", readSecretFile);
   return pass
     ? `amqp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`
     : `amqp://${encodeURIComponent(user)}@${host}:${port}`;
@@ -107,16 +106,95 @@ async function connectRabbitMQ() {
 await connectRabbitMQ();
 
 // --- METRICS (Prometheus text format, no dependency) ---
-const metrics = { requestsTotal: 0, searchRequests: 0, cacheHits: 0, errors: 0 };
+const metrics = {
+  requestsTotal: 0,
+  searchRequests: 0,
+  cacheHits: 0,
+  errors: 0,
+  redisUp: 0,
+  redisMemoryUsedBytes: null,
+  redisConnectedClients: null,
+};
+const responseCounts = new Map();
+const requestDurationBuckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+const requestDurations = new Map();
+
+// Keep label cardinality bounded: never put raw URLs, query strings, or user
+// input into Prometheus labels.
+function metricsRoute(path) {
+  if (["/", "/healthz", "/api/search", "/api/rerank/search", "/api/semantic/search", "/api/hybrid/search", "/api/autocomplete"].includes(path)) {
+    return path;
+  }
+  return path.startsWith("/api/") ? "/api/other" : "/other";
+}
+
+function escapePrometheusLabel(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll('"', '\\"');
+}
+const redisInfoValue = (info, key) => {
+  const line = info.split(/\r?\n/).find((entry) => entry.startsWith(`${key}:`));
+  if (!line) return null;
+  const value = Number(line.slice(key.length + 1));
+  return Number.isFinite(value) ? value : null;
+};
 app.use((req, res, next) => {
-  metrics.requestsTotal += 1;
-  if (req.path.startsWith("/api/")) metrics.searchRequests += 1;
+  // Exclude Prometheus scrapes so monitoring traffic does not inflate the
+  // application request counters or create a feedback loop in the dashboard.
+  if (req.path !== "/metrics") {
+    metrics.requestsTotal += 1;
+    if (req.path.startsWith("/api/")) metrics.searchRequests += 1;
+
+    const route = metricsRoute(req.path);
+    const startedAt = process.hrtime.bigint();
+    res.once("finish", () => {
+      const statusClass = `${Math.floor(res.statusCode / 100)}xx`;
+      const responseKey = `${route}|${statusClass}`;
+      responseCounts.set(responseKey, (responseCounts.get(responseKey) ?? 0) + 1);
+      if (res.statusCode >= 500) metrics.errors += 1;
+
+      const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+      const duration = requestDurations.get(route) ?? {
+        count: 0,
+        sum: 0,
+        buckets: new Array(requestDurationBuckets.length).fill(0),
+      };
+      duration.count += 1;
+      duration.sum += durationSeconds;
+      requestDurationBuckets.forEach((bucket, index) => {
+        if (durationSeconds <= bucket) duration.buckets[index] += 1;
+      });
+      requestDurations.set(route, duration);
+    });
+  }
   next();
 });
-app.get("/metrics", (req, res) => {
+app.use(express.json());
+app.get("/metrics", async (req, res) => {
+  if (redisClient && typeof redisClient.info === "function") {
+    try {
+      const redisInfo = await redisClient.info();
+      metrics.redisUp = 1;
+      metrics.redisMemoryUsedBytes = redisInfoValue(redisInfo, "used_memory");
+      metrics.redisConnectedClients = redisInfoValue(redisInfo, "connected_clients");
+    } catch {
+      // Redis telemetry is optional; its failure must not break app metrics.
+      metrics.redisUp = 0;
+      metrics.redisMemoryUsedBytes = null;
+      metrics.redisConnectedClients = null;
+    }
+  }
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(
     [
+      "# HELP elastiflix_redis_up Whether the Redis server answered an INFO request",
+      "# TYPE elastiflix_redis_up gauge",
+      `elastiflix_redis_up ${metrics.redisUp}`,
+      "# HELP elastiflix_redis_memory_used_bytes Redis memory used in bytes",
+      "# TYPE elastiflix_redis_memory_used_bytes gauge",
+      metrics.redisMemoryUsedBytes === null ? null : `elastiflix_redis_memory_used_bytes ${metrics.redisMemoryUsedBytes}`,
+      "# HELP elastiflix_redis_connected_clients Connected Redis clients",
+      "# TYPE elastiflix_redis_connected_clients gauge",
+      metrics.redisConnectedClients === null ? null : `elastiflix_redis_connected_clients ${metrics.redisConnectedClients}`,
       "# HELP elastiflix_http_requests_total Total HTTP requests",
       "# TYPE elastiflix_http_requests_total counter",
       `elastiflix_http_requests_total ${metrics.requestsTotal}`,
@@ -129,6 +207,20 @@ app.get("/metrics", (req, res) => {
       "# HELP elastiflix_errors_total Total errors",
       "# TYPE elastiflix_errors_total counter",
       `elastiflix_errors_total ${metrics.errors}`,
+      "# HELP elastiflix_http_responses_total HTTP responses by bounded route and status class",
+      "# TYPE elastiflix_http_responses_total counter",
+      ...[...responseCounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => {
+        const [route, statusClass] = key.split("|");
+        return `elastiflix_http_responses_total{route=\"${escapePrometheusLabel(route)}\",status_class=\"${statusClass}\"} ${count}`;
+      }),
+      "# HELP elastiflix_http_request_duration_seconds HTTP response duration in seconds",
+      "# TYPE elastiflix_http_request_duration_seconds histogram",
+      ...[...requestDurations.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([route, duration]) => [
+        ...requestDurationBuckets.map((bucket, index) => `elastiflix_http_request_duration_seconds_bucket{route=\"${escapePrometheusLabel(route)}\",le=\"${bucket}\"} ${duration.buckets[index]}`),
+        `elastiflix_http_request_duration_seconds_bucket{route=\"${escapePrometheusLabel(route)}\",le=\"+Inf\"} ${duration.count}`,
+        `elastiflix_http_request_duration_seconds_sum{route=\"${escapePrometheusLabel(route)}\"} ${duration.sum}`,
+        `elastiflix_http_request_duration_seconds_count{route=\"${escapePrometheusLabel(route)}\"} ${duration.count}`,
+      ]),
       "",
     ].join("\n")
   );
@@ -201,7 +293,6 @@ app.post("/api/autocomplete", async (req, res) => {
   try {
     res.json(await SearchConnector.onAutocomplete(state, queryConfig));
   } catch (err) {
-    metrics.errors += 1;
     log.error({ event: "autocomplete_failed", error: err?.message ?? String(err) });
     res.status(500).json({ error: "autocomplete_failed" });
   }

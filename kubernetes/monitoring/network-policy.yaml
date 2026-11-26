@@ -1,0 +1,28 @@
+# Namespace-level ingress isolation. Egress is left unchanged because Prometheus
+# must scrape cluster and application targets that are provisioned independently.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-default-deny-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Prometheus, Grafana, and the chart's internal components can communicate;
+# other namespaces cannot initiate connections to monitoring pods by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-internal-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring

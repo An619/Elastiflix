@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: logstash
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=The Logstash pipeline consumes an API key through an env placeholder; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported keystore/file flow before production.
 spec:
   replicas: 1
   selector:
@@ -13,12 +15,21 @@ spec:
       labels:
         app: logstash
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         # movies.conf reads /data/movies.ndjson. Without this the K8s
         # cluster indexes zero movies. Download the catalogue from the
         # repo and convert it to NDJSON (same as start.sh does locally).
         - name: prepare-data
-          image: python:3.12-alpine
+          image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+          imagePullPolicy: Always
           command:
             - sh
             - -c
@@ -29,18 +40,41 @@ spec:
                 wget -q -O /data/movies.json.gz "https://raw.githubusercontent.com/An619/Elastiflix/main/data-loader/movies/movies.json.gz"
                 python3 -c "import gzip, json; movies = json.load(gzip.open('/data/movies.json.gz', 'rt', encoding='utf-8')); open('/data/movies.ndjson', 'w', encoding='utf-8').write('\n'.join(json.dumps(m, ensure_ascii=False) for m in movies) + '\n'); print(f'{len(movies)} movies ready')"
               fi
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: init-tmp
+              mountPath: /tmp
       containers:
         - name: logstash # NOSONAR - official Elastic image, pinned to 9.1.0
-          image: docker.elastic.co/logstash/logstash:9.1.0
+          image: docker.elastic.co/logstash/logstash:9.1.0@sha256:6f6ea12c82a3edd3d0709a003cb63920bd6624c4ae203f29e76b6f1c10f528db
+          imagePullPolicy: Always
           ports:
             - containerPort: 5044
               name: beats
           env:
             - name: ES_HOST
-              value: "http://elasticsearch:9200"
+              value: "https://elasticsearch.elastic-stack.svc.cluster.local:9200"
+            - name: ES_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-security
+                  key: logstash-api-key
             - name: LS_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
           resources:
@@ -50,6 +84,24 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            tcpSocket:
+              port: 5044
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: 5044
+            initialDelaySeconds: 30
+            periodSeconds: 10
           volumeMounts:
             - name: pipeline
               mountPath: /usr/share/logstash/pipeline
@@ -63,6 +115,13 @@ spec:
               mountPath: /usr/share/logstash/templates
             - name: data
               mountPath: /data
+            - name: logstash-data
+              mountPath: /usr/share/logstash/data
+            - name: logstash-tmp
+              mountPath: /tmp
+            - name: elasticsearch-ca
+              mountPath: /run/secrets/elastic
+              readOnly: true
       volumes:
         - name: pipeline
           configMap:
@@ -78,6 +137,18 @@ spec:
             name: logstash-templates
         - name: data
           emptyDir: {}
+        - name: init-tmp
+          emptyDir: {}
+        - name: logstash-data
+          emptyDir: {}
+        - name: logstash-tmp
+          emptyDir: {}
+        - name: elasticsearch-ca
+          secret:
+            secretName: elasticsearch-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

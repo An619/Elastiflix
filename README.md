@@ -14,10 +14,10 @@
 ![Argo CD](https://img.shields.io/badge/Argo_CD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions_CI/CD-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
 
-Elastiflix is a **production-grade, 3-tier movie-search application** (React · Node.js · Elasticsearch) wrapped in a full **DevSecOps + GitOps** delivery pipeline: every commit is tested, scanned, containerized, promoted, and rolled out by declarative manifests — with observability, secrets management, and backups included. It runs the same on a laptop (Docker Compose or Minikube) and on AWS EKS.
+Elastiflix is a **3-tier movie-search reference application** (React · Node.js · Elasticsearch) with DevSecOps and GitOps components. The repository includes local Docker Compose and Minikube paths, plus AWS/EKS scaffolding that still requires validation before it should be described as production-ready. Observability and secrets-management components are present; backup/restore automation is not yet wired end to end.
 
 > **Live traffic path:** User → NGINX Ingress → Frontend (nginx) → Backend (Express) → Elasticsearch
-> **Deployment path:** `git push` → GitHub Actions (test · scan · build) → Docker Hub → bot bumps image tags → Argo CD syncs → Kubernetes (canary)
+> **Deployment path:** `git push` → GitHub Actions (test · scan · build) → Docker Hub (commit-SHA tags) → reviewed GitOps manifest change → Argo CD syncs → Kubernetes
 
 ## 📸 Application Preview
 
@@ -33,12 +33,12 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 
 1. **A developer pushes** to a branch / opens a PR. `devsecops.yml` fans out to parallel gates: code tests, Gitleaks, dependency audits, Hadolint, SonarCloud, Trivy, Checkov.
 2. **On merge to `main`** the same gates go green, then `docker-push` builds both images with `docker/build-push-action` and pushes them to Docker Hub tagged with the **commit SHA** (never `latest`).
-3. The pipeline then **rewrites `image:` fields** in `kubernetes/application/` and commits them back with `[skip ci]`.
-4. **Argo CD** (watching `HEAD` of this repo, automated sync + `selfHeal` + `prune`) detects the manifest diff and converges the cluster to it.
-5. **Argo Rollouts** releases the new frontend gradually: **20% canary → pause 30s → 100%**. A broken build never receives full traffic.
-6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend.
+3. CI reports the published image references but does **not** mutate the GitOps configuration. A maintainer proposes the new image tags in a reviewed manifest change.
+4. **Argo CD** watches the configured repository paths (automated sync + `selfHeal` + `prune`) and converges the cluster after the reviewed manifest change is merged.
+5. The frontend Rollout now declares stable/canary Services, progressive traffic weights (**10% → 25% → 50% → 100%**) and a Prometheus AnalysisTemplate. Minikube uses the NGINX traffic router; EKS uses the ALB router. Runtime controller compatibility and controlled-abort behavior remain to be validated.
+6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend in Minikube. The separate EKS ALB Ingress remains gated on approved ACM certificate and DNS values.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
-8. **Observability** is wired in, not bolted on: Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs, Prometheus + Grafana for metrics, Velero + MinIO for backups.
+8. **Observability components** include Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs and kube-prometheus-stack for metrics. Alertmanager remains disabled pending an approved receiver; `minio.yaml` is not a complete backup solution and Velero schedules/restore automation are not configured.
 
 > Search data model: the catalog (`data-loader/movies/movies.json.gz`) is bulk-indexed by `data-loader/index-data.py`, which derives the `user_score` facet from TMDB `vote_average` and pulls ELSER/E5 inference pipelines (`data-loader/config/`) so the same index serves BM25, vector semantic, hybrid, and reranked retrieval.
 
@@ -78,21 +78,21 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 | **Docker (multi-stage builds)** | Packaging | `frontend/Dockerfile.prod` (CRA build → unprivileged nginx), `backend/Dockerfile.prod` (deps → runtime, npm removed, `USER node`) |
 | **Docker Compose** | Local one-shot ELK | Full stack + beats + app in one command (`start.sh`) — the fastest way to hack on this repo |
 | **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, `argocd`, `velero` |
-| **NGINX Ingress Controller** | Edge routing | Host-based rules: app, API, Kibana, Argo CD, Grafana, MinIO |
-| **Argo Rollouts** | Progressive delivery | Frontend canary Rollout: `20% → pause 30s → 100%` with automated analysis hooks |
+| **NGINX Ingress Controller** | Local app routing | Local-only HTTP host rules for the app and API; Argo CD, Kibana, and Grafana are not exposed by Ingress |
+| **Argo Rollouts** | Progressive delivery | Frontend uses NGINX (Minikube) or ALB (EKS) traffic routing, stable/canary Services and Prometheus analysis; live controller compatibility and abort/rollback behavior remain unvalidated |
 | **Helm** | Chart management | Infra values (`helm/elasticsearch`, `helm/redis`, `helm/rabbitmq`) + installs Argo CD, ESO, ALB controller, kube-prometheus-stack |
 
 ### 🔁 GitOps & delivery
 
 | Tool | Used for | Why it's here |
 |---|---|---|
-| **Argo CD** | Continuous delivery | Watches `HEAD` (app-of-apps: `argocd-app/elk/infra/ingress/monitoring.yaml`); automated prune + self-heal — the cluster **pulls**, nothing is `kubectl apply`ed by hand |
-| **Docker Hub** (`an619/elastiflix-*`) | Image registry | Immutable SHA-tagged images; GitOps commits the tag bump |
-| **Sealed Secrets** | Encrypted secrets in git | Redis/RabbitMQ creds are sealed (`kubernetes/infra/*-sealedsecret.yaml`); only the in-cluster controller can decrypt |
-| **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → K8s Secrets via **IRSA** (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
+| **Argo CD** | Continuous delivery | Local and EKS App-of-Apps roots register environment-specific child Applications; a restricted `elastiflix` AppProject limits source repositories, destinations and cluster-scoped kinds. EKS workload sync remains manual until the approved ALB Ingress is healthy |
+| **Docker Hub** (`an619/elastiflix-*`) | Image registry | Images are published with commit-SHA tags; tag immutability is not enforced at the registry |
+| **Local Kubernetes secrets** | Minikube development | Bootstrap requires unique random passwords and creates namespace-scoped Secrets through short-lived private files; no credentials are committed |
+| **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → Kubernetes Secrets via a dedicated **IRSA** service account (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
 | **GitHub Actions** | CI/CD engine | Reusable workflows fanned out by `devsecops.yml`; all third-party actions **pinned to commit SHAs** |
-| **Velero + MinIO** | Backup & restore | Namespace `velero` backs up cluster state to S3-compatible MinIO (`minio.yaml`) |
-| **GitHub → merge bot** | GitOps trigger | `docker-push` pipeline commits updated image tags to `main` (`[skip ci]`) — closing the GitOps loop with zero humans |
+| **MinIO manifest** | Local S3-compatible storage experiment | `minio.yaml` contains a service/deployment, but no Velero schedule, persistent storage, or tested restore workflow |
+| **GitOps promotion** | Deployment change control | CI publishes image references; a maintainer must propose and review manifest updates before Argo CD deploys them |
 
 ### 🛡️ DevSecOps & quality gates
 
@@ -100,19 +100,19 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 |---|---|---|---|
 | Code tests | **Jest (frontend)** · **`node --test` + supertest (backend)** · **`terraform validate`** · **kubeconform** | PR + main | build fails |
 | Secret scanning | **Gitleaks** | PR + main | build fails |
-| Dependency audit | **npm audit** (`--omit=dev`, prod only) · **pip-audit** | PR + main, high+ | build fails |
+| Dependency audit | **npm audit** — frontend full tree with exact, expiring build-toolchain exceptions; frontend production tree and backend at HIGH+ · **pip-audit** | PR + main | build fails |
 | Dockerfile lint | **Hadolint** (prod & dev Dockerfiles) | PR + main | build fails |
 | SAST | **SonarCloud** — Quality Gate: 0 new issues, **≥ 80% coverage on new code**, 0% duplication | PR + main | build fails |
-| Image scan | **Trivy** — CRITICAL/HIGH fixable CVEs | PR + main | build fails |
-| IaC scan | **Checkov** — Terraform **hard gate**; Kubernetes report-only (~105 accepted findings, tracked as tech debt) | PR + main | Terraform: fails · K8s: report |
+| Image / filesystem scan | **Trivy** — blocks fixable CRITICAL/HIGH findings; reports all CRITICAL/HIGH findings, including unfixed | PR + main | build fails |
+| IaC scan | **Checkov** — Terraform and Kubernetes **hard gates**; Kubernetes currently has no skipped checks | PR + main | fails |
 | Action hygiene | **SHA-pinned actions**, minimal `permissions:`, `docker-push` main-only | always | — |
 
 ### 📊 Observability
 
 | Tool | Scope |
 |---|---|
-| **kube-prometheus-stack 58.2.2** (Argo CD app) | Prometheus + Grafana; alertmanager disabled; namespace `monitoring`; Grafana served at `grafana.local` (Ingress) |
-| **Backend `/metrics`** | Hand-rolled Prometheus text exposition: requests, search requests, cache hits, errors |
+| **kube-prometheus-stack 58.2.2** (Argo CD app) | Prometheus + Grafana; Alertmanager disabled; namespace `monitoring`; Grafana is accessed with a local `kubectl port-forward`, not Ingress |
+| **App + infrastructure metrics** | Backend `/metrics` exports bounded response/status and latency histograms plus Redis gauges; ServiceMonitors, SLO burn-rate rules, and Grafana dashboards include a proposed 99.5% rolling 7-day availability target (not an approved SLA). Prometheus/alert delivery remains runtime-unvalidated; Alertmanager notifications are disabled pending an approved receiver |
 | **Kibana dashboards** | Movies catalog explore, application logs, infrastructure health (`elk/`, `load-dashboards.sh`) |
 | **Structured logs** | `level`, `service`, `path`, `status`, `duration_ms`, `search_type`, `cache_hit` per line |
 
@@ -120,10 +120,10 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 
 | Tool | Used for |
 |---|---|
-| **Terraform** | AWS: VPC, **EKS** (managed node groups), IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTP egress only for APT), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
-| **Ansible** | Cluster bootstrap: Helm repos → Argo CD → External Secrets Operator → ALB controller (IRSA ServiceAccount) |
+| **Terraform** | AWS: VPC, **EKS** (private managed nodes and private API by default), IAM/**IRSA** roles (ESO, ALB controller), **private bastion** (no public IP, SSM access, HTTPS-only egress), EKS OIDC. `terraform fmt -check` + `validate` run in CI; Checkov is the hard gate |
+| **Ansible** | EKS bootstrap: namespaces/PSA labels → Argo CD → Argo Rollouts → ESO (IRSA) → AWS Load Balancer Controller → GitOps Application registration |
 | **AWS** | EKS, EC2 bastion, IAM/IRSA, Secrets Manager, VPC/NAT, ALB |
-| **kubeseal** | Sealing infra secrets into `kubernetes/infra/*-sealedsecret.yaml` |
+| **kubeseal** | Not used by the current environment-specific secret path; local credentials are generated at bootstrap and EKS credentials are synced through ESO |
 
 ---
 
@@ -133,11 +133,13 @@ Pick one workflow — all three run the same app:
 
 ### 1. Docker Compose (local ELK demo, ~5 min)
 
-Requirements: Docker Desktop with **≥ 8 GB** RAM, Python 3.
+Requirements: Docker Desktop with **≥ 8 GB** RAM, Docker Compose **v2.26+** (environment-sourced secrets), and Python 3.
 
 ```bash
 git clone https://github.com/An619/Elastiflix.git && cd Elastiflix
-./start.sh        # generates elk/data/movies.ndjson, then compose up
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
+./start.sh        # stores Redis secret in ignored .secrets/, then starts Compose
 ```
 
 | Service | URL |
@@ -145,29 +147,48 @@ git clone https://github.com/An619/Elastiflix.git && cd Elastiflix
 | Elastiflix | http://localhost:3000 |
 | Kibana | http://localhost:5601 |
 | Elasticsearch | http://localhost:9200 |
-| RabbitMQ management | http://localhost:15672 (`user` / `elastiflix-rabbit-pass`) |
+| RabbitMQ management | http://localhost:15672 (`user` / password supplied through `RABBITMQ_PASSWORD`) |
 
 See [README-ELK.md](README-ELK.md) for the Elastic Stack walkthrough and [LEARN.md](LEARN.md) for concepts.
 
 ### 2. Minikube + GitOps (local Kubernetes)
 
 ```bash
-./bootstrap.sh            # minikube + Argo CD + apps + sealed secrets
-minikube tunnel           # in a separate admin shell
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
+./bootstrap.sh            # minikube + pinned Argo CD/Rollouts/Falco + GitOps apps
+minikube tunnel           # in a separate admin shell, if required for Ingress
 ```
 
-Argo CD UI: http://argocd.local (`admin` / `admin123`) · App: http://elastiflix.local · API: http://api.elastiflix.local
+The bootstrap rejects missing, short, reused passwords, and Redis values outside letters/digits/underscore/hyphen; it writes them through short-lived mode-0600 files into Minikube Secrets and never commits or prints them. Argo CD stays on TLS and uses its generated initial admin password; connect only with `kubectl -n argocd port-forward svc/argocd-server 8080:443` and retrieve the password from `argocd-initial-admin-secret`. The app remains at `http://elastiflix.local`; local development ingress is not production TLS. Kibana and Grafana have no Ingress resources; access them with `kubectl -n elastic-stack port-forward svc/kibana 5601:5601` and `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`.
 
 ### 3. AWS EKS (Terraform + Ansible)
 
+AWS deployment is intentionally **not** automatic. Review the network, state-backend, version, and cost assumptions before running any `apply` command. EKS control-plane hours, EC2 nodes/bastion, NAT gateways, ALB, EBS, S3 and DynamoDB may incur charges; check current regional pricing and review a Terraform plan first.
+
+Bootstrap the remote-state bucket, KMS key, and lock table only after reviewing `terraform/backend-bootstrap/README.md` and the current AWS costs; first confirm an approved existing audit bucket is configured to receive S3 server access logs. The bootstrap uses local state and creates AWS resources; it has not been run from this repository. Then create private local copies of the dev backend/tfvars examples, set the output bucket/table/KMS key values, choose a supported EKS Kubernetes version, and replace the AZ placeholders with three names verified in the target account and region before initializing/planning the environment explicitly:
+
 ```bash
-cd terraform
-terraform init && terraform apply        # VPC, EKS, IAM/IRSA, bastion
-cd ..
-ansible-playbook ansible/playbook.yml    # Argo CD, ESO, ALB controller
+cp terraform/environments/dev.backend.hcl.example terraform/environments/dev.backend.hcl
+cp terraform/environments/dev.tfvars.example terraform/environments/dev.tfvars
+# Fill in the owned state bucket/table and a reviewed cluster_version first.
+terraform -chdir=terraform init -backend-config=environments/dev.backend.hcl
+terraform -chdir=terraform plan -var-file=environments/dev.tfvars -out=dev.tfplan
 ```
 
-Then sync the Argo CD applications; everything else reconciles itself. See [FROM-SCRATCH.md](FROM-SCRATCH.md).
+The EKS API stays private unless you supply a restricted public CIDR list. Before registering the AWS Ingress Application, add an approved ACM certificate ARN and the service's DNS hostname to `kubernetes/aws/ingress-aws.yaml`; the listener is HTTPS-only and intentionally has no HTTP fallback. After provisioning is explicitly approved, run the bootstrap from a network that can reach the private API and export the actual Terraform outputs:
+
+```bash
+export EKS_CLUSTER_NAME="$(terraform -chdir=terraform output -raw eks_cluster_name)"
+export ALB_CONTROLLER_ROLE_ARN="$(terraform -chdir=terraform output -raw alb_controller_role_arn)"
+export ESO_ROLE_ARN="$(terraform -chdir=terraform output -raw eso_role_arn)"
+ansible-playbook --syntax-check ansible/playbook.yml
+ansible-playbook ansible/playbook.yml
+# Only after setting the ACM certificate ARN above and approving deployment:
+kubectl apply -f kubernetes/argocd-aws-ingress.yaml
+```
+
+Reach a private API through an approved SSM/bastion or VPN path; do not run Ansible from an unreachable laptop network. No AWS resources are provisioned by CI. See [Terraform/AWS Phase 2 status](docs/security/phase-2-terraform-aws.md), [Phase 3 Kubernetes status](docs/security/phase-3-kubernetes-security-reliability.md), [Phase 4 progressive-delivery status](docs/security/phase-4-gitops-progressive-delivery.md), [Phase 5 SRE/SLO status](docs/security/phase-5-sre-observability.md), and [FROM-SCRATCH.md](FROM-SCRATCH.md).
 
 ---
 
@@ -178,8 +199,8 @@ frontend/          React 18 SPA (@elastic/eui, react-search-ui) + nginx prod ima
 backend/           Express (ESM) API — search/semantic/hybrid/rerank + cache + events
 data-loader/       Python bulk indexer for the movie catalog (+ config templates)
 elk/               Filebeat · Metricbeat · Logstash (pipelines, index templates)
-kubernetes/        application/ (Rollout+Deployment, Ingress) · infra/ · elastic-stack/ · aws/
-helm/              values for elasticsearch / redis / rabbitmq charts
+kubernetes/        application/ base · environments/ (Minikube/EKS overlays) · gitops/ (App-of-Apps) · infra/ · elastic-stack/ · aws/
+helm/              pinned Argo CD config + values for Elasticsearch / Redis / RabbitMQ charts
 terraform/         VPC · EKS · IAM/IRSA · ALB · bastion (private, SSM)
 ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB controller)
 .github/workflows/ DevSecOps pipeline (reusable workflows + SHA-pinned actions)
@@ -194,12 +215,12 @@ ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB control
 | `REDIS_URL` *or* `REDIS_HOST` + `REDIS_PASSWORD` | backend | Redis cache; backend runs fine without it |
 | `RABBITMQ_URL` *or* `RABBITMQ_HOST` + `RABBITMQ_USER`/`RABBITMQ_PASSWORD` | backend | Events to RabbitMQ; optional |
 | `LOCAL` | backend | `true` enables CORS for the dev origins only |
-| `REDIS_PASSWORD` / `RABBITMQ_PASSWORD` | `bootstrap.sh`, Helm, K8s Secrets | Local secret values — **never commit real passwords** (use kubeseal + Sealed Secrets / ESO) |
+| `REDIS_PASSWORD` / `RABBITMQ_PASSWORD` | Local `start.sh` / `bootstrap.sh`, AWS Secrets Manager / ESO | Supply unique random local values; Compose mounts `REDIS_PASSWORD` as a file-backed secret (not a Redis/backend environment variable). AWS production values sync from Secrets Manager; never commit credentials |
 
 ## 🧪 Tests
 
 ```bash
-# backend — 26 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
+# backend — 42 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
 cd backend && npm ci && npm run test:coverage      # lcov in backend/coverage/
 
 # frontend — 13 tests (CRA/jest)
@@ -218,8 +239,9 @@ CI enforces **≥ 80% coverage on new code** via the SonarCloud Quality Gate.
 
 - Non-root containers everywhere (`USER node`, nginx-unprivileged), `runAsNonRoot`, `drop: [ALL]` capabilities, `allowPrivilegeEscalation: false`
 - No public IPs on compute; the bastion lives in a **private subnet** and is reached via **AWS SSM** only (443 egress + HTTP/80 strictly for Ubuntu APT)
-- Secrets: **Sealed Secrets** (in-git, encrypted) or **ESO + AWS Secrets Manager (IRSA)** — nothing plaintext in the repo; Gitleaks scans every push
-- Supply chain: **SHA-pinned actions**, prod-only `npm audit`, **Trivy** image gate, **Checkov** IaC gate, **SonarCloud** SAST gate
+- Secrets: unique local credentials are injected at bootstrap and stored as Kubernetes Secrets; EKS secrets sync from AWS Secrets Manager through ESO + IRSA. No credentials are committed; Gitleaks scans every push
+- Supply chain: **SHA-pinned actions**, exact expiring frontend build-toolchain exceptions plus production dependency audits, **Trivy** filesystem/image gates, **Checkov** IaC gate, **SonarCloud** SAST gate, and Dependabot updates
+- Published images are configured for BuildKit SBOM/provenance attestations and Cosign signing plus digest verification; SHA tags themselves are not registry-immutable
 - Least-privilege RBAC (`kubernetes/application/rbac`), per-tier namespaces, image tags bound to commit SHAs
 
 ## 📚 Docs

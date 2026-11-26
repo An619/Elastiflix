@@ -1,44 +1,275 @@
-- name: Bootstrap EKS Cluster
+---
+- name: Bootstrap EKS cluster add-ons
   hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    eks_cluster_name: "{{ lookup('env', 'EKS_CLUSTER_NAME') }}"
+    alb_controller_role_arn: "{{ lookup('env', 'ALB_CONTROLLER_ROLE_ARN') }}"
+    eso_role_arn: "{{ lookup('env', 'ESO_ROLE_ARN') }}"
   tasks:
-    - name: Add Helm Repos
-      command: "helm repo add {{ item.name }} {{ item.url }}"
+    - name: Require Terraform outputs for this cluster
+      ansible.builtin.assert:
+        that:
+          - eks_cluster_name | length > 0
+          - alb_controller_role_arn is match('^arn:[^:]+:iam::[0-9]{12}:role/.+')
+          - eso_role_arn is match('^arn:[^:]+:iam::[0-9]{12}:role/.+')
+        fail_msg: >-
+          Export EKS_CLUSTER_NAME, ALB_CONTROLLER_ROLE_ARN, and ESO_ROLE_ARN from
+          the selected Terraform environment before running this playbook.
+
+    - name: Apply namespaces and Pod Security Admission labels before workloads
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - kubernetes/namespaces/namespaces.yaml
+
+    - name: Create the External Secrets Operator namespace
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - namespace
+          - external-secrets
+          - --dry-run=client
+          - -o
+          - yaml
+      register: external_secrets_namespace
+      changed_when: false
+
+    - name: Ensure the External Secrets Operator namespace exists
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - -
+        stdin: "{{ external_secrets_namespace.stdout }}"
+      register: external_secrets_namespace_apply
+      changed_when: "'unchanged' not in external_secrets_namespace_apply.stdout"
+
+    - name: Create the External Secrets Operator service account
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - serviceaccount
+          - external-secrets
+          - --namespace
+          - external-secrets
+          - --dry-run=client
+          - -o
+          - yaml
+      register: external_secrets_service_account
+      changed_when: false
+
+    - name: Apply the External Secrets Operator service account
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - -
+        stdin: "{{ external_secrets_service_account.stdout }}"
+      register: external_secrets_service_account_apply
+      changed_when: "'unchanged' not in external_secrets_service_account_apply.stdout"
+
+    - name: Annotate the External Secrets Operator service account with its Terraform IRSA role
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - annotate
+          - serviceaccount
+          - external-secrets
+          - --namespace
+          - external-secrets
+          - "eks.amazonaws.com/role-arn={{ eso_role_arn }}"
+          - --overwrite
+
+    - name: Add Helm repositories
+      ansible.builtin.command:
+        argv:
+          - helm
+          - repo
+          - add
+          - "{{ item.name }}"
+          - "{{ item.url }}"
+          - --force-update
       loop:
-        - { name: "argo", url: "https://argoproj.github.io/argo-helm" }
-        - {
-            name: "external-secrets",
-            url: "https://charts.external-secrets.io",
-          }
-        - { name: "eks", url: "https://aws.github.io/eks-charts" }
+        - name: argo
+          url: https://argoproj.github.io/argo-helm
+        - name: external-secrets
+          url: https://charts.external-secrets.io
+        - name: eks
+          url: https://aws.github.io/eks-charts
 
     - name: Install Argo CD
-      command: helm upgrade --install argocd argo/argo-cd --namespace argocd --create-namespace
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - argocd
+          - argo/argo-cd
+          - --version
+          - 10.20.0
+          - --namespace
+          - argocd
+          - --create-namespace
+          - --values
+          - helm/argocd/values.yaml
+
+    - name: Wait for Argo CD to become ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=condition=available
+          - --timeout=300s
+          - deployment/argocd-server
+          - --namespace
+          - argocd
+
+    - name: Configure Argo CD Rollout health assessment
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - kubernetes/argocd-rollout-health.yaml
+
+    - name: Create the Argo Rollouts namespace
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+
+    - name: Install the pinned Argo Rollouts controller and CRDs
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - --server-side
+          - --force-conflicts
+          - --namespace
+          - argo-rollouts
+          - -f
+          - https://raw.githubusercontent.com/argoproj/argo-rollouts/v1.10.2/manifests/install.yaml
+
+    - name: Wait for Argo Rollouts controller to become ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=condition=available
+          - --timeout=300s
+          - deployment/argo-rollouts
+          - --namespace
+          - argo-rollouts
 
     - name: Install External Secrets Operator
-      command: helm upgrade --install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - external-secrets
+          - external-secrets/external-secrets
+          - --version
+          - 2.15.0
+          - --namespace
+          - external-secrets
+          - --create-namespace
+          - --set
+          - serviceAccount.create=false
+          - --set
+          - serviceAccount.name=external-secrets
 
-    # The ALB controller is installed with serviceAccount.create=false so
-    # it uses the IRSA-annotated ServiceAccount created below (role
-    # provisioned by terraform/alb.tf). Without this SA the controller
-    # pods crash-loop with "serviceaccount not found".
-    - name: Create ALB controller ServiceAccount (IRSA)
-      command: >-
-        kubectl create serviceaccount aws-load-balancer-controller
-        --namespace kube-system
-        --dry-run=client -o yaml | kubectl apply -f -
+    - name: Wait for External Secrets Operator to become ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=condition=available
+          - --timeout=300s
+          - deployment/external-secrets
+          - --namespace
+          - external-secrets
 
-    - name: Annotate ALB ServiceAccount with IRSA role
-      command: >-
-        kubectl annotate serviceaccount aws-load-balancer-controller
-        --namespace kube-system
-        eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') }}:role/elastiflix-alb-role
-        --overwrite
-      when: lookup('env', 'AWS_ACCOUNT_ID') is defined and lookup('env', 'AWS_ACCOUNT_ID') != ''
+    - name: Create AWS Load Balancer Controller service account
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl create serviceaccount aws-load-balancer-controller \
+          --namespace kube-system --dry-run=client -o yaml |
+          kubectl apply -f -
+      args:
+        executable: /bin/bash
+
+    - name: Annotate the controller service account with its Terraform IRSA role
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - annotate
+          - serviceaccount
+          - aws-load-balancer-controller
+          - --namespace
+          - kube-system
+          - "eks.amazonaws.com/role-arn={{ alb_controller_role_arn }}"
+          - --overwrite
 
     - name: Install AWS Load Balancer Controller
-      command: >
-        helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller
-        --namespace kube-system
-        --set clusterName=elastiflix-eks
-        --set serviceAccount.create=false
-        --set serviceAccount.name=aws-load-balancer-controller
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - aws-load-balancer-controller
+          - eks/aws-load-balancer-controller
+          - --version
+          - 3.7.0
+          - --namespace
+          - kube-system
+          - --set
+          - "clusterName={{ eks_cluster_name }}"
+          - --set
+          - serviceAccount.create=false
+          - --set
+          - serviceAccount.name=aws-load-balancer-controller
+          - --set
+          - createIngressClassResource=true
+
+    - name: Wait for AWS Load Balancer Controller to become ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=condition=available
+          - --timeout=300s
+          - deployment/aws-load-balancer-controller
+          - --namespace
+          - kube-system
+
+    - name: Report installed Argo Rollouts and AWS Load Balancer Controller images
+      ansible.builtin.command:
+        argv:
+          - scripts/phase4-controller-report.sh
+          - eks
+
+    - name: Create the restricted Elastiflix Argo CD project
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - kubernetes/argocd-project.yaml
+
+    - name: Register the EKS App-of-Apps root after cluster prerequisites are ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - apply
+          - -f
+          - kubernetes/argocd-eks-root.yaml

@@ -13,10 +13,16 @@ process.env.RABBITMQ_URL = "amqp://fake-amqp:5672";
 // --- In-memory fake Redis ---
 const store = new Map();
 let failGet = false;
+let failInfo = false;
+let infoResponse = null;
 const fakeClient = {
   on() {},
   async connect() {},
   async quit() {},
+  async info() {
+    if (failInfo) throw new Error("info unavailable");
+    return infoResponse ?? "# Memory\nused_memory:12345\n# Clients\nconnected_clients:7\n";
+  },
   async get(key) {
     if (failGet) throw new Error("get boom");
     return store.get(key) ?? null;
@@ -137,6 +143,33 @@ describe("Backend with Redis + RabbitMQ (mocked)", () => {
     failSend = false;
     assert.equal(res.status, 200);
     assert.equal(res.body.results[0].title, "Mocked Title");
+  });
+
+  it("exports Redis availability, memory, and connected-client gauges", async () => {
+    const res = await request(app).get("/metrics");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /^elastiflix_redis_up 1$/m);
+    assert.match(res.text, /^elastiflix_redis_memory_used_bytes 12345$/m);
+    assert.match(res.text, /^elastiflix_redis_connected_clients 7$/m);
+  });
+
+  it("omits Redis gauges when INFO fields are missing or malformed", async () => {
+    infoResponse = "# Memory\nused_memory:not-a-number\n";
+    const res = await request(app).get("/metrics");
+    infoResponse = null;
+    assert.equal(res.status, 200);
+    assert.match(res.text, /^elastiflix_redis_up 1$/m);
+    assert.doesNotMatch(res.text, /^elastiflix_redis_memory_used_bytes /m);
+    assert.doesNotMatch(res.text, /^elastiflix_redis_connected_clients /m);
+  });
+
+  it("keeps application metrics available when Redis INFO fails", async () => {
+    failInfo = true;
+    const res = await request(app).get("/metrics");
+    failInfo = false;
+    assert.equal(res.status, 200);
+    assert.match(res.text, /^elastiflix_redis_up 0$/m);
+    assert.match(res.text, /^elastiflix_http_requests_total \d+$/m);
   });
 
   it("autocomplete returns suggestions from the search backend", async () => {

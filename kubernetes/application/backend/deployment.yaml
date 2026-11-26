@@ -13,34 +13,31 @@ spec:
       labels:
         app: backend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
-          image: an619/elastiflix-backend:6265a1c4f7d0ccbcb46d4f2b3819d937c5c82f91
-          imagePullPolicy: IfNotPresent
+          image: an619/elastiflix-backend:2e6b726fa47344510ed5d5c3d97fb0da28d6372b@sha256:1864ff44766c5340a55b1e5c894445b00b1ace5d1fdc7a08bc6b2cac2206319a
+          imagePullPolicy: Always
           ports:
             - containerPort: 17700
           envFrom:
             - configMapRef:
                 name: app-config
-            - secretRef:
-                name: backend-secret
-                optional: true
-          # Passwords come from the Secret; Backend.js builds REDIS_URL /
-          # RABBITMQ_URL from REDIS_PASSWORD / RABBITMQ_PASSWORD when the
-          # full URLs are not set explicitly.
           env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: redis-password
-                  optional: true
-            - name: RABBITMQ_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: rabbitmq-password
-                  optional: true
+            - name: ES_API_KEY_FILE
+              value: /run/secrets/elastiflix/es-api-key
+            - name: NODE_EXTRA_CA_CERTS
+              value: /run/secrets/elastiflix/es-ca.crt
+            - name: REDIS_PASSWORD_FILE
+              value: /run/secrets/elastiflix/redis-password
+            - name: RABBITMQ_PASSWORD_FILE
+              value: /run/secrets/elastiflix/rabbitmq-password
           resources:
             requests:
               cpu: "100m"
@@ -50,10 +47,16 @@ spec:
               memory: "512Mi"
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 10001
+            runAsGroup: 10001
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: backend-secrets
+              mountPath: /run/secrets/elastiflix
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
@@ -66,3 +69,16 @@ spec:
               port: 17700
             initialDelaySeconds: 20
             periodSeconds: 10
+      volumes:
+        - name: backend-secrets
+          secret:
+            secretName: backend-secret
+            items:
+              - key: es-api-key
+                path: es-api-key
+              - key: es-ca.crt
+                path: es-ca.crt
+              - key: redis-password
+                path: redis-password
+              - key: rabbitmq-password
+                path: rabbitmq-password

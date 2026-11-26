@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: frontend-canary-health
+  namespace: elastiflix
+spec:
+  metrics:
+    # The backend currently exports aggregate process counters, not a release
+    # or canary label. This is a service-level guard, not canary-only attribution.
+    - name: backend-request-volume
+      interval: 30s
+      count: 2
+      failureLimit: 1
+      consecutiveErrorLimit: 1
+      successCondition: result[0] > 0
+      failureCondition: result[0] <= 0
+      provider:
+        prometheus:
+          address: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(elastiflix_http_requests_total[5m])) or vector(0)
+    - name: backend-error-ratio
+      interval: 30s
+      count: 2
+      failureLimit: 1
+      consecutiveErrorLimit: 1
+      successCondition: result[0] <= 0.01
+      failureCondition: result[0] > 0.01
+      provider:
+        prometheus:
+          address: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            (
+              sum(rate(elastiflix_errors_total[5m]))
+              /
+              clamp_min(sum(rate(elastiflix_http_requests_total[5m])), 0.001)
+            ) or vector(1)

@@ -6,6 +6,8 @@ Everything below matches the repo exactly. Practice it once end-to-end before th
 
 ```bash
 git clone https://github.com/An619/Elastiflix.git && cd Elastiflix
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 ./start.sh          # boots the whole ELK + app stack (first run: pulls images, ~3–5 min)
 ```
 
@@ -15,7 +17,7 @@ Have these tabs open and logged in:
 |---|---|---|
 | Elastiflix app | http://localhost:3000 | — |
 | Kibana | http://localhost:5601 | none (demo mode) |
-| RabbitMQ management | http://localhost:15672 | `user` / `elastiflix-rabbit-pass` |
+| RabbitMQ management | http://localhost:15672 | `user` / the password in your `RABBITMQ_PASSWORD` environment variable |
 | GitHub repo + Actions | https://github.com/An619/Elastiflix/actions | — |
 | SonarCloud | https://sonarcloud.io/summary/new_code?id=An619_Elastiflix | — |
 
@@ -53,19 +55,19 @@ Open **GitHub Actions** and walk left → right:
 
 1. `code-tests` — jest (frontend), `node --test` (backend, mocked Redis/RabbitMQ), `terraform validate`, kubeconform.
 2. `secret-scanning` — Gitleaks.
-3. `dependency-checks` — prod-only `npm audit --omit=dev --audit-level=high`, pip-audit.
+3. `dependency-checks` — frontend full-tree npm audit with exact, expiring CRA build-toolchain exceptions; frontend production and backend npm audits at HIGH+, plus pip-audit.
 4. `code-quality` — Hadolint on all four Dockerfiles.
 5. `sonar-qube` — SonarCloud Quality Gate: **≥ 80% coverage on new code, 0 blocking issues** — demonstrate it by opening the PR quality gate (PR #1 history shows it going from 47.7% → 83.0% coverage and C → A security rating).
-6. `docker-checks` — Trivy (CRITICAL/HIGH fails) + Checkov (Terraform hard gate; k8s report-only while manifest hardening is pending).
-7. `docker-push` (main only) — builds both images, pushes `an619/elastiflix-*:<sha>`, commits the tag bump back to `main` with `[skip ci]`.
+6. `docker-checks` — Trivy filesystem and image scans (fixable CRITICAL/HIGH findings block; all CRITICAL/HIGH findings are reported) + Checkov (Terraform and Kubernetes hard gates; Kubernetes currently has no skipped checks).
+7. `docker-push` (main only) — builds and publishes both `an619/elastiflix-*:<sha>` images with SBOM/provenance, signs and verifies each digest with Cosign, then reports tag and digest references. It does not write to Git; digest promotion requires a separately reviewed manifest change.
 
 **Say:** "Every third-party action is pinned to a commit SHA — a compromised tag can't reach the pipeline."
 
 ## 5. GitOps & the cluster (2 min) — "how it actually gets to prod"
 
-1. `kubernetes/application/frontend/deployment.yaml` → **Argo Rollouts canary**: 20% → 30s pause → 100%. "A bad frontend never sees more than 20% of users; rollback is `kubectl argo rollouts undo`."
-2. `argocd-*.yaml` — **app-of-apps**: app, infra (Redis/RabbitMQ), ELK, ingress, monitoring. Argo CD watches HEAD of `main`, automated prune + self-heal.
-3. Secrets: `kubernetes/infra/*-sealedsecret.yaml` — encrypted at rest in git; only the in-cluster sealed-secrets controller can open them. On EKS the backend secret comes from **AWS Secrets Manager via ESO + IRSA** — no static AWS keys anywhere.
+1. `kubernetes/application/frontend/deployment.yaml` → Argo Rollouts has a 20% → 30s pause → 100% step sequence, but no configured traffic router or metric analysis. Do not claim a true 20% user split or automatic health-based rollback.
+2. `argocd-*.yaml` — separate Argo CD Application manifests for app, infra, ELK, and monitoring, with automated prune + self-heal. The bootstrap applies those Application objects; this is not currently an App-of-Apps root.
+3. Secrets: local Minikube uses unique random values supplied through environment variables and written to Kubernetes Secrets via private temporary files. On EKS, **AWS Secrets Manager via ESO + a dedicated IRSA service account** owns those targets; the two environments do not share Secret writers.
 4. Images run **non-root**, `drop: [ALL]`, `allowPrivilegeEscalation: false`.
 
 ## 6. Architecture walk-through (1–2 min)
@@ -77,7 +79,7 @@ Open `docs/adr/` first if asked *why* (GitOps over push, SHA-tagged images, fron
 ## Likely interview questions — crisp answers
 
 **Why GitOps instead of `kubectl apply` from CI?**
-Git is the only source of truth; the cluster pulls and self-heals. CI never needs cluster credentials — the attack surface of the pipeline drops to zero, and drift is impossible or auto-corrected. Rollback = revert a commit.
+Git is the desired-state source for each configured Argo CD Application. CI does not need cluster credentials; Argo CD can self-heal drift within its synced paths. Rollback is a reviewed revert of the manifest change. This does not mean drift is impossible or that every cluster component is Git-managed.
 
 **Why tag images with the git SHA instead of `latest`?**
 Immutability + provenance. `kubectl describe` tells you exactly which commit runs in prod; there's no ambiguity about what `latest` points to; rollbacks and audits are trivial.
@@ -92,7 +94,7 @@ The frontend is the user-visible surface where canary analysis (errors/latency a
 Quality Gate on new code: 0 new issues/vulnerabilities, ≥ 80% coverage on new lines, 0% duplication. The check is a required status — PRs can't merge red.
 
 **How are secrets handled end-to-end?**
-Local: `.env` (gitignored). Compose/demo: inline demo values clearly marked as such. Kubernetes: Sealed Secrets (encrypted in git). AWS EKS: External Secrets Operator syncs Secrets Manager via IRSA — the cluster never stores a long-lived credential.
+Local Compose/Minikube: generate a unique password in the shell and provide it through the environment; the Minikube bootstrap writes it through a temporary private file. EKS: External Secrets Operator syncs Secrets Manager via a dedicated IRSA role. No plaintext credentials are committed.
 
 **Why is single-node Elasticsearch "yellow"?**
 A single node can't allocate a replica on the same node, so the primary shard is active but unassigned replicas stay yellow forever. Green is expected only in multi-node clusters; healthchecks accept yellow on purpose.
@@ -100,8 +102,8 @@ A single node can't allocate a replica on the same node, so the primary shard is
 **How would you roll back a bad deploy?**
 Frontend: `kubectl argo rollouts undo rollout/frontend -n elastiflix` (or `abort`). Backend: `kubectl rollout undo deploy/backend -n elastiflix`. GitOps-wise: revert the commit that bumped the tag — Argo CD reconciles everything back automatically.
 
-**Why is k8s Checkov report-only but Terraform hard-fail?**
-Terraform findings were fixed and can be enforced at zero known-false-positive cost. The k8s manifests still carry ~105 accepted findings (digest pinning, seccomp, root beats images) that need a registry + cluster to remediate and verify — tracked as tech debt, not silently ignored.
+**How is Kubernetes Checkov enforced?**
+Terraform and Kubernetes Checkov scans are hard gates. The Kubernetes manifests pass Checkov 3.4.10 with no skipped checks. The backend image is built from the phase 2 source and its Deployment mounts credentials from a Kubernetes Secret rather than exposing the password values through environment variables.
 
 **How would this scale?**
 ES: dedicated master/data nodes, shard count tuned to the index budget. Backend: HPA on CPU + RPS (metrics already exposed). Frontend is static behind nginx — trivially horizontal. Redis: add a replica + Sentinel. RabbitMQ: quorum queues at higher throughput.

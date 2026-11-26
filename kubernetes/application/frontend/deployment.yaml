@@ -5,11 +5,31 @@ metadata:
   namespace: elastiflix
 spec:
   replicas: 2
+  progressDeadlineSeconds: 600
   strategy:
     canary:
+      stableService: frontend
+      canaryService: frontend-canary
+      scaleDownDelaySeconds: 30
+      abortScaleDownDelaySeconds: 30
+      maxSurge: 1
+      maxUnavailable: 0
       steps:
-        - setWeight: 20
-        - pause: { duration: 30s } # Wait 30 seconds before full rollout
+        - setWeight: 10
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
+        - setWeight: 25
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
+        - setWeight: 50
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: frontend-canary-health
         - setWeight: 100
   selector:
     matchLabels:
@@ -19,10 +39,17 @@ spec:
       labels:
         app: frontend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: an619/elastiflix-frontend:6265a1c4f7d0ccbcb46d4f2b3819d937c5c82f91
-          imagePullPolicy: IfNotPresent
+          image: an619/elastiflix-frontend:2e6b726fa47344510ed5d5c3d97fb0da28d6372b@sha256:7f3292aecdf6755727281c9a7b54350e2d082b95cdcfd1c2831127dfe62d9e25
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           resources:
@@ -35,9 +62,16 @@ spec:
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
+            runAsGroup: 101
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /
@@ -50,3 +84,8 @@ spec:
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 10
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}

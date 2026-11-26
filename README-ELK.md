@@ -30,6 +30,8 @@ git clone https://github.com/An619/Elastiflix.git
 cd Elastiflix
 git checkout main
 
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 ./start.sh
 ```
 

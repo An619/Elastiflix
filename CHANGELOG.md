@@ -16,7 +16,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this p
 
 ### Changed
 - All GitHub Actions pinned to immutable commit SHAs; pins serving Node 20 bumped to Node 24 runtimes (gitleaks-action v3.0.0, build-push-action v7.4.0, setup-terraform v4.0.1, trivy-action v0.36.0)
-- `docker-push` job: conditional on `push` to `main` only; concurrency group added; manifest tag bump now rebases and skips empty commits
+- `docker-push` job: conditional on `push` to `main` only; publishes commit-SHA image tags and reports them without mutating GitOps manifests; manifest promotion now requires a reviewed change
+- Workflow token permissions are read-only by default; Docker Hub and SonarCloud secrets are passed explicitly to only the reusable jobs that need them
+- Kubeconform failures now fail CI for known schemas; unknown custom-resource schemas are explicitly reported as skipped pending dedicated schema validation
+- Terraform formatting is checked with `terraform fmt -check` rather than silently formatting the CI workspace
 - `sonar-project.properties` — `data-loader` included in sources; Python coverage wired via `sonar.python.coverage.reportPaths`
 - Checkov: Terraform is a hard gate (only `CKV_TF_1` skipped — registry module convention); Kubernetes report-only pending manifest hardening pass
 - Logstash 9.1.0, container runs with explicit data/ConfigMap mounts and resource requests
@@ -31,4 +34,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this p
 
 ### Security
 - Removed cleartext `http://elastiflix.local` CORS origins; dropped download-and-run `npx update-browserslist-db` step from the frontend image build
-- `npm audit --omit=dev --audit-level=high` now fails the build (was `|| true`); pip-audit added for the data loader
+- Replaced the permissive backend `npm audit ... || true` with high-severity gates; frontend production and backend audit gates plus `pip-audit` for the data loader are enabled
+- Added an exact, expiring policy for existing CRA development-toolchain HIGH findings; new, changed, runtime, invalid-date, and stale findings fail closed
+- Added Trivy filesystem and image scans with blocking fixable CRITICAL/HIGH findings and a report-only pass for all CRITICAL/HIGH findings
+- Published images now carry BuildKit SBOM/provenance attestations and are Cosign-signed and verified against their digest and GitHub Actions identity; CI no longer writes GitOps manifests
+- Added scheduled Dependabot updates for GitHub Actions, npm, Python, Docker, and Terraform

@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: kibana
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=Kibana requires ELASTICSEARCH_PASSWORD env; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported keystore/file flow before production.
 spec:
   replicas: 1
   selector:
@@ -13,23 +15,84 @@ spec:
       labels:
         app: kibana
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: kibana
-          image: docker.elastic.co/kibana/kibana:9.1.0
+          image: docker.elastic.co/kibana/kibana:9.1.0@sha256:dc186ea11154576c474f9a541dbee95401fd910028ef21ab8b3a222ce2c0e067
+          imagePullPolicy: Always
           ports:
             - containerPort: 5601
           env:
             - name: ELASTICSEARCH_HOSTS
-              value: "http://elasticsearch:9200"
-            - name: XPACK_SECURITY_ENABLED
-              value: "false"
+              value: "https://elasticsearch:9200"
+            - name: ELASTICSEARCH_USERNAME
+              value: kibana_system
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-security
+                  key: kibana-password
+            - name: ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES
+              value: /usr/share/kibana/config/certs/ca.crt
           resources:
             requests:
               cpu: "250m"
               memory: "512Mi"
+              ephemeral-storage: "128Mi"
             limits:
               cpu: "1000m"
               memory: "1Gi"
+              ephemeral-storage: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            periodSeconds: 10
+          volumeMounts:
+            - name: kibana-data
+              mountPath: /usr/share/kibana/data
+            - name: kibana-tmp
+              mountPath: /tmp
+            - name: elasticsearch-ca
+              mountPath: /usr/share/kibana/config/certs
+              readOnly: true
+      volumes:
+        - name: kibana-data
+          emptyDir: {}
+        - name: kibana-tmp
+          emptyDir: {}
+        - name: elasticsearch-ca
+          secret:
+            secretName: elasticsearch-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

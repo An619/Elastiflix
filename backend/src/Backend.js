@@ -293,6 +293,7 @@ app.post("/api/autocomplete", async (req, res) => {
   try {
     res.json(await SearchConnector.onAutocomplete(state, queryConfig));
   } catch (err) {
+    metrics.errors += 1;
     log.error({ event: "autocomplete_failed", error: err?.message ?? String(err) });
     res.status(500).json({ error: "autocomplete_failed" });
   }

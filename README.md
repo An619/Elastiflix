@@ -220,7 +220,7 @@ ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB control
 ## 🧪 Tests
 
 ```bash
-# backend — 41 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
+# backend — 42 tests, supertest + in-memory module mocks (Redis/RabbitMQ)
 cd backend && npm ci && npm run test:coverage      # lcov in backend/coverage/
 
 # frontend — 13 tests (CRA/jest)

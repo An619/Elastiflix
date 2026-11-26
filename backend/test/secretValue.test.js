@@ -37,6 +37,13 @@ describe("secretValue", () => {
     assert.equal(secretValue("ES_API_KEY", readSecretFile), undefined);
   });
 
+  it("propagates mounted secret read errors other than a missing file", () => {
+    process.env.ES_API_KEY_FILE = "/run/secrets/elastiflix/es-api-key";
+    const permissionError = new Error("permission denied");
+    permissionError.code = "EACCES";
+    assert.throws(() => secretValue("ES_API_KEY", () => { throw permissionError; }), permissionError);
+  });
+
   it("uses a local environment value only when no file is configured", () => {
     process.env.ES_API_KEY = "local-test-key";
     delete process.env.ES_API_KEY_FILE;

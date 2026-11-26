@@ -37,7 +37,7 @@ Repository installer pins were inspected without contacting a cluster:
 
 ## Validation performed in the workspace
 
-- Backend tests passed (41 tests, including bounded response/error and latency metric coverage); frontend tests passed (13 tests).
+- Backend tests passed (42 tests, including bounded response/error and latency metric coverage); frontend tests passed (13 tests).
 - Parsed the Kubernetes YAML files and checked App-of-Apps project/destination constraints. Rollout and AnalysisTemplate spec fields match the upstream Argo Rollouts v1.10.2 CRD schemas.
 - Rendered the Minikube, EKS, local GitOps, and EKS GitOps Kustomizations with Kustomize v4.5.4. All four builds succeeded; rendered resource identities were unique, and the Rollout outputs retained the 10/25/50/100 steps with the expected NGINX or ALB traffic router. The EKS root output includes the workload Application with automated sync disabled as the ALB prerequisite gate.
 - `ansible-playbook --syntax-check ansible/playbook.yml` passed with Ansible Core 2.18.7. The read-only controller inventory script passed mocked `kubectl` checks for both Minikube and EKS output paths.

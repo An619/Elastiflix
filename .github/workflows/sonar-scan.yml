@@ -1,11 +1,15 @@
 name: SonarCloud SAST
-on: workflow_call
+on:
+    workflow_call:
+        secrets:
+            SONAR_TOKEN:
+                required: true
 
 jobs:
     sonar:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   fetch-depth: 0
             - name: Setup Node.js
@@ -26,6 +30,13 @@ jobs:
                   cd backend
                   npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
                   npm run test:coverage
+            - name: Generate npm audit policy coverage
+              run: |
+                  backend/node_modules/.bin/c8 \
+                    --reporter=lcov \
+                    --report-dir=policy-coverage \
+                    --include=scripts/npm-audit-policy.js \
+                    node --test scripts/test/npm-audit-policy.test.js
             - name: Generate Python Coverage
               run: |
                   cd data-loader

@@ -30,6 +30,11 @@ jobs:
                   cd backend
                   npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
                   npm run test:coverage
+            - name: Normalize coverage paths for SonarCloud
+              run: |
+                  # Coverage tools run from package directories; Sonar resolves LCOV SF paths from the repository root.
+                  sed -i 's|^SF:|SF:frontend/|' frontend/coverage/lcov.info
+                  sed -i 's|^SF:|SF:backend/|' backend/coverage/lcov.info
             - name: Generate npm audit policy coverage
               run: |
                   backend/node_modules/.bin/c8 \

@@ -7,7 +7,7 @@ data "aws_caller_identity" "current" {}
 # IAM Role for External Secrets Operator (ESO)
 module "eso_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "5.60.0"
+  version = "6.11.1"
 
   role_name = "${var.cluster_name}-eso-role"
 

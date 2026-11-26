@@ -32,7 +32,7 @@ These rules are discovered by the existing PrometheusRule selector (`release: mo
 
 ## Validation performed in the workspace
 
-- Backend tests cover response/error accounting, bounded low-cardinality route labels, histogram exposition, and exclusion of private paths/query values (40 backend tests passed).
+- Backend tests cover response/error accounting, bounded low-cardinality route labels, histogram exposition, and exclusion of private paths/query values (41 backend tests passed).
 - `scripts/validate-observability.py` parsed 54 Kubernetes YAML files, all 18 Prometheus rule expressions, and all three Grafana dashboards (including dashboard PromQL). The generated backend exposition parsed with the Prometheus Python client.
 - PrometheusRule selector labels and Grafana sidecar labels were checked against the configured chart values. No live Prometheus, Grafana, Alertmanager, or deployed application endpoint was queried. Runtime scrape discovery, rule evaluation, retention, dashboard rendering, and notification delivery remain operator validation items.
 

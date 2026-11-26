@@ -3,6 +3,8 @@ kind: StatefulSet
 metadata:
   name: elasticsearch
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=Elastic entrypoint requires ELASTIC_PASSWORD env; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported file/keystore flow before production.
 spec:
   serviceName: elasticsearch
   replicas: 1

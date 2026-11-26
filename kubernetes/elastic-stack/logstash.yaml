@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: logstash
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=The Logstash pipeline consumes an API key through an env placeholder; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported keystore/file flow before production.
 spec:
   replicas: 1
   selector:

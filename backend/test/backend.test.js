@@ -81,8 +81,10 @@ describe("Backend API", () => {
 
   it("records bounded route/status and latency metrics without exposing raw paths", async () => {
     await request(app).get("/api/users/private-id?query=private-query");
+    await request(app).get("/private-id?query=private-query");
     const res = await request(app).get("/metrics");
     assert.match(res.text, /elastiflix_http_responses_total\{route="\/api\/other",status_class="4xx"\} \d+/);
+    assert.match(res.text, /elastiflix_http_responses_total\{route="\/other",status_class="4xx"\} \d+/);
     assert.match(res.text, /elastiflix_http_request_duration_seconds_bucket\{route="\/api\/other",le="\+Inf"\} \d+/);
     assert.doesNotMatch(res.text, /private-id|private-query/);
   });

@@ -9,6 +9,41 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+: "${REDIS_PASSWORD:?Set REDIS_PASSWORD to a unique random value of at least 32 characters before starting the demo.}"
+: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD to a unique random value of at least 32 characters before starting the demo.}"
+if (( ${#REDIS_PASSWORD} < 32 || ${#RABBITMQ_PASSWORD} < 32 )); then
+  echo "REDIS_PASSWORD and RABBITMQ_PASSWORD must each be at least 32 characters." >&2
+  exit 1
+fi
+if [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "REDIS_PASSWORD may contain only letters, digits, underscore, or hyphen." >&2
+  exit 1
+fi
+if [[ "$REDIS_PASSWORD" == "$RABBITMQ_PASSWORD" ]]; then
+  echo "Use different passwords for Redis and RabbitMQ." >&2
+  exit 1
+fi
+if [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "REDIS_PASSWORD may contain only letters, digits, underscore, or hyphen." >&2
+  exit 1
+fi
+compose_version="$(docker compose version --short 2>/dev/null || true)"
+if [[ "$compose_version" =~ ^v?([0-9]+)\.([0-9]+)\. ]]; then
+  compose_major="${BASH_REMATCH[1]}"
+  compose_minor="${BASH_REMATCH[2]}"
+else
+  echo "Docker Compose v2.26+ is required for environment-sourced secrets." >&2
+  exit 1
+fi
+if (( compose_major < 2 || (compose_major == 2 && compose_minor < 26) )); then
+  echo "Docker Compose v2.26+ is required for environment-sourced secrets." >&2
+  exit 1
+fi
+
+# Compose maps REDIS_PASSWORD into a file-backed secret; it is not added to
+# the Redis or backend container environment and never appears in CLI args.
+export REDIS_PASSWORD
+
 ES="http://localhost:9200"
 KB="http://localhost:5601"
 

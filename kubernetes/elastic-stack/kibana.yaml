@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: kibana
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=Kibana requires ELASTICSEARCH_PASSWORD env; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported keystore/file flow before production.
 spec:
   replicas: 1
   selector:
@@ -29,9 +31,16 @@ spec:
             - containerPort: 5601
           env:
             - name: ELASTICSEARCH_HOSTS
-              value: "http://elasticsearch:9200"
-            - name: XPACK_SECURITY_ENABLED
-              value: "false"
+              value: "https://elasticsearch:9200"
+            - name: ELASTICSEARCH_USERNAME
+              value: kibana_system
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-security
+                  key: kibana-password
+            - name: ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES
+              value: /usr/share/kibana/config/certs/ca.crt
           resources:
             requests:
               cpu: "250m"
@@ -70,11 +79,20 @@ spec:
               mountPath: /usr/share/kibana/data
             - name: kibana-tmp
               mountPath: /tmp
+            - name: elasticsearch-ca
+              mountPath: /usr/share/kibana/config/certs
+              readOnly: true
       volumes:
         - name: kibana-data
           emptyDir: {}
         - name: kibana-tmp
           emptyDir: {}
+        - name: elasticsearch-ca
+          secret:
+            secretName: elasticsearch-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

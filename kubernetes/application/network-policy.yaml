@@ -93,6 +93,14 @@ spec:
         - podSelector:
             matchLabels:
               app: frontend
+        # Prometheus resides in monitoring; this rule is only for scrape GETs
+        # on the metrics endpoint and cannot reach Redis/RabbitMQ directly.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
       ports:
         - protocol: TCP
           port: 17700

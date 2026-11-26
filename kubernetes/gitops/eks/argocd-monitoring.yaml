@@ -4,7 +4,7 @@ metadata:
   name: monitoring
   namespace: argocd
 spec:
-  project: default
+  project: elastiflix
   source:
     repoURL: "https://prometheus-community.github.io/helm-charts"
     chart: kube-prometheus-stack
@@ -15,6 +15,17 @@ spec:
           enabled: false
         prometheus:
           prometheusSpec:
+            serviceMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorSelector:
+              matchLabels:
+                release: monitoring
+            serviceMonitorNamespaceSelector: {}
+            ruleSelectorNilUsesHelmValues: false
+            ruleSelector:
+              matchLabels:
+                release: monitoring
+            ruleNamespaceSelector: {}
+            scrapeInterval: 30s
             resources:
               requests:
                 memory: 256Mi
@@ -22,6 +33,12 @@ spec:
               limits:
                 memory: 512Mi
         grafana:
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              searchNamespace: ALL
           resources:
             requests:
               memory: 128Mi

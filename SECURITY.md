@@ -23,7 +23,7 @@ We follow coordinated disclosure: after a fix ships, we're happy to credit you (
 
 - Non-root containers, `runAsNonRoot`, `drop: [ALL]` capabilities, no privilege escalation
 - No public compute IPs; AWS access via **SSM** to a private bastion
-- Secrets in git are **Sealed Secrets** (encrypted); cloud secrets via **External Secrets Operator + AWS Secrets Manager (IRSA)**
+- Kubernetes secrets are not committed in plaintext; local secrets are created from restricted temporary files, while AWS secrets are synced from **AWS Secrets Manager via External Secrets Operator + IRSA**. Avoid introducing encrypted or plaintext secret manifests into Git; keep one explicitly reviewed owner for each environment's Secret.
 - CI is configured for **Gitleaks**, **Trivy** image scanning, **Checkov** (Terraform blocking; Kubernetes currently report-only), **SonarCloud**, dependency audits, and **Hadolint**; required checks must be observed green before calling a change validated
 - Workflow permissions default to read-only; publishing receives only the Docker Hub secrets and OIDC signing permission it needs
 - Images use commit-SHA tags, and the publish workflow is configured to attach BuildKit/Syft SBOM and provenance attestations and Cosign-sign/verify the pushed digest; SHA tags alone are not registry-enforced immutable

@@ -3,6 +3,8 @@ kind: StatefulSet
 metadata:
   name: elasticsearch
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=Elastic entrypoint requires ELASTIC_PASSWORD env; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported file/keystore flow before production.
 spec:
   serviceName: elasticsearch
   replicas: 1
@@ -28,7 +30,7 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 9200
-              name: http
+              name: https
             - containerPort: 9300
               name: transport
           env:
@@ -36,12 +38,31 @@ spec:
               value: single-node
             - name: ES_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-bootstrap
+                  key: elastic-password
             - name: xpack.security.enabled
-              value: "false"
+              value: "true"
             - name: xpack.security.transport.ssl.enabled
-              value: "false"
+              value: "true"
+            - name: xpack.security.transport.ssl.verification_mode
+              value: certificate
+            - name: xpack.security.transport.ssl.key
+              value: /usr/share/elasticsearch/config/certs/tls.key
+            - name: xpack.security.transport.ssl.certificate
+              value: /usr/share/elasticsearch/config/certs/tls.crt
+            - name: xpack.security.transport.ssl.certificate_authorities
+              value: /usr/share/elasticsearch/config/certs/ca.crt
             - name: xpack.security.http.ssl.enabled
-              value: "false"
+              value: "true"
+            - name: xpack.security.http.ssl.key
+              value: /usr/share/elasticsearch/config/certs/tls.key
+            - name: xpack.security.http.ssl.certificate
+              value: /usr/share/elasticsearch/config/certs/tls.crt
+            - name: xpack.security.http.ssl.certificate_authorities
+              value: /usr/share/elasticsearch/config/certs/ca.crt
           resources:
             requests:
               cpu: "250m"
@@ -58,9 +79,14 @@ spec:
             capabilities:
               drop: ["ALL"]
           livenessProbe:
-            httpGet:
-              path: /
-              port: 9200
+            exec:
+              command:
+                - bash
+                - -c
+                - |
+                  curl --fail --silent --show-error --cacert /usr/share/elasticsearch/config/certs/ca.crt \
+                    --user "elastic:$(cat /run/secrets/elasticsearch/elastic-password)" \
+                    https://localhost:9200/ >/dev/null
             initialDelaySeconds: 60
             periodSeconds: 20
           readinessProbe:
@@ -69,7 +95,9 @@ spec:
                 - bash
                 - -c
                 - |
-                  curl -s http://localhost:9200/_cluster/health | grep -qE '"status":"(green|yellow)"'
+                  curl --fail --silent --cacert /usr/share/elasticsearch/config/certs/ca.crt \
+                    --user "elastic:$(cat /run/secrets/elasticsearch/elastic-password)" \
+                    https://localhost:9200/_cluster/health | grep -qE '"status":"(green|yellow)"'
             initialDelaySeconds: 30
             periodSeconds: 10
           volumeMounts:
@@ -79,11 +107,26 @@ spec:
               mountPath: /usr/share/elasticsearch/logs
             - name: elasticsearch-tmp
               mountPath: /tmp
+            - name: elasticsearch-tls
+              mountPath: /usr/share/elasticsearch/config/certs
+              readOnly: true
+            - name: elasticsearch-bootstrap
+              mountPath: /run/secrets/elasticsearch
+              readOnly: true
       volumes:
         - name: elasticsearch-logs
           emptyDir: {}
         - name: elasticsearch-tmp
           emptyDir: {}
+        - name: elasticsearch-tls
+          secret:
+            secretName: elasticsearch-tls
+        - name: elasticsearch-bootstrap
+          secret:
+            secretName: elasticsearch-bootstrap
+            items:
+              - key: elastic-password
+                path: elastic-password
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -103,5 +146,5 @@ spec:
     app: elasticsearch
   ports:
     - port: 9200
-      name: http
+      name: https
       targetPort: 9200

@@ -1,20 +1,20 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: grafana-ingress
-  namespace: monitoring
+  name: api-ingress
+  namespace: elastiflix
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
-    - host: grafana.local
+    - host: api.elastiflix.local
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: monitoring-grafana
+                name: backend
                 port:
-                  number: 80
+                  number: 17700

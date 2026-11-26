@@ -39,7 +39,15 @@ spec:
           imagePullPolicy: Always
           command: ["sh", "-c"]
           args:
-            - exec redis-server --requirepass "$(cat /run/secrets/redis/redis-password)" --appendonly yes
+            - |
+              set -eu
+              password="$(cat /run/secrets/redis/redis-password)"
+              case "$password" in
+                *[!A-Za-z0-9_-]*|'') echo "Redis password contains unsupported characters" >&2; exit 1 ;;
+              esac
+              umask 077
+              printf 'requirepass %s\n' "$password" > /tmp/redis.conf
+              exec redis-server /tmp/redis.conf --appendonly yes
           ports:
             - containerPort: 6379
           resources:
@@ -93,15 +101,26 @@ kind: Service
 metadata:
   name: redis
   namespace: infra
+  labels:
+    app: redis
 spec:
   selector:
     app: redis
   ports:
-    - port: 6379
+    - name: redis
+      port: 6379
       targetPort: 6379
 
 
 # --- RABBITMQ ---
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-enabled-plugins
+  namespace: infra
+data:
+  enabled_plugins: "[rabbitmq_management,rabbitmq_prometheus]."
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -151,6 +170,8 @@ spec:
               name: amqp
             - containerPort: 15672
               name: management
+            - containerPort: 15692
+              name: metrics
           resources:
             requests:
               cpu: "100m"
@@ -184,6 +205,10 @@ spec:
               readOnly: true
             - name: rabbitmq-tmp
               mountPath: /tmp
+            - name: rabbitmq-plugins
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+              readOnly: true
       volumes:
         - name: rabbitmq-data
           persistentVolumeClaim:
@@ -196,12 +221,20 @@ spec:
                 path: rabbitmq-password
         - name: rabbitmq-tmp
           emptyDir: {}
+        - name: rabbitmq-plugins
+          configMap:
+            name: rabbitmq-enabled-plugins
+            items:
+              - key: enabled_plugins
+                path: enabled_plugins
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq
   namespace: infra
+  labels:
+    app: rabbitmq
 spec:
   selector:
     app: rabbitmq
@@ -210,3 +243,6 @@ spec:
       name: amqp
     - port: 15672
       name: management
+    - port: 15692
+      targetPort: metrics
+      name: metrics

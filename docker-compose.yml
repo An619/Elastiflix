@@ -150,13 +150,26 @@ services:
   redis:
     image: redis:7-alpine
     container_name: elastiflix-redis
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      - sh
+      - -c
+      - |
+        password="$$(cat /run/secrets/redis-password)"
+        case "$$password" in
+          *[!A-Za-z0-9_-]*|'') echo "Redis password contains unsupported characters" >&2; exit 1 ;;
+        esac
+        umask 077
+        printf 'requirepass %s\n' "$$password" > /tmp/redis.conf
+        exec redis-server /tmp/redis.conf --appendonly yes
+    secrets:
+      - source: redis_password
+        target: redis-password
     ports:
       - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis-password)\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -165,8 +178,8 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: elastiflix-rabbitmq
     environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-user}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD to a unique random value before starting Compose}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -195,8 +208,15 @@ services:
       - ES_HOST=http://elasticsearch:9200
       - ES_INDEX=elastiflix-movies
       - ES_API_KEY=
-      - REDIS_URL=redis://redis:6379
-      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}@rabbitmq:5672
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD_FILE=/run/secrets/redis-password
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-user}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD to a unique random value before starting Compose}
+    secrets:
+      - source: redis_password
+        target: redis-password
     ports:
       - "17700:17700"
     volumes:
@@ -222,6 +242,10 @@ services:
       - ./frontend/src:/app/src
     depends_on:
       - backend
+
+secrets:
+  redis_password:
+    environment: REDIS_PASSWORD
 
 volumes:
   esdata:

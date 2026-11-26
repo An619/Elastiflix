@@ -23,6 +23,8 @@ jobs:
                   tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
             - name: Lint GitHub Actions workflows
               run: /tmp/actionlint -color .github/workflows/*.yml
+            - name: Validate bootstrap shell syntax
+              run: bash -n bootstrap.sh start.sh scripts/*.sh
             - name: Test Frontend
               run: |
                   cd frontend
@@ -37,6 +39,12 @@ jobs:
                   cd backend
                   npm ci
                   npm test
+            - name: Validate Prometheus rules and Grafana dashboards
+              run: |
+                  python3 -m venv /tmp/observability-venv
+                  /tmp/observability-venv/bin/pip install --disable-pip-version-check --no-input --only-binary=:all: PyYAML==6.0.4 promql-parser==0.12.0
+                  /tmp/observability-venv/bin/python -m unittest data-loader/test_validate_observability.py
+                  /tmp/observability-venv/bin/python scripts/validate-observability.py
             - name: Setup Terraform
               uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
               with:
@@ -58,6 +66,15 @@ jobs:
               run: terraform -chdir=terraform init -backend=false
             - name: Validate Terraform configuration
               run: terraform -chdir=terraform validate
+            - name: Initialize and validate remote-state bootstrap configuration
+              run: |
+                  terraform -chdir=terraform/backend-bootstrap init -backend=false
+                  terraform -chdir=terraform/backend-bootstrap validate
+            - name: Validate Ansible playbook syntax
+              run: |
+                  python3 -m venv /tmp/ansible-venv
+                  /tmp/ansible-venv/bin/pip install --disable-pip-version-check --no-input ansible-core==2.19.6
+                  /tmp/ansible-venv/bin/ansible-playbook --syntax-check ansible/playbook.yml
             - name: Validate Kubernetes Manifests
               run: |
                   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
@@ -66,4 +83,4 @@ jobs:
                   # remain strict and any validation error fails this job.
                   /tmp/kubeconform -strict -ignore-missing-schemas -summary \
                     kubernetes/application/ kubernetes/infra/ \
-                    kubernetes/elastic-stack/ kubernetes/aws/
+                    kubernetes/elastic-stack/ kubernetes/aws/ kubernetes/monitoring/

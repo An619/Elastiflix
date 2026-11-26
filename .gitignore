@@ -3,11 +3,15 @@ data-loader/movies/tmp/
 
 # ELK one-shot: generated at setup time from data-loader/movies/movies.json.gz
 elk/data/movies.ndjson
+# Local Elasticsearch TLS and credential material
+.secrets/
+
 # Terraform
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/*.tfstate
-terraform/*.tfstate.backup
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.backend.hcl
 *.pem
 kubeseal.exe
 my-public-key.pem

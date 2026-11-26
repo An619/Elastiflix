@@ -40,6 +40,15 @@ describe("redisUrl", () => {
     };
     assert.equal(redisUrl(readSecretFile), "redis://:p%40ss%3Aword@redis.infra:6379");
   });
+  it("reads the Docker Compose mounted password file", () => {
+    process.env.REDIS_HOST = "redis";
+    process.env.REDIS_PASSWORD_FILE = "/run/secrets/redis-password";
+    const readSecretFile = (path) => {
+      assert.equal(path, "/run/secrets/redis-password");
+      return "compose-secret";
+    };
+    assert.equal(redisUrl(readSecretFile), "redis://:compose-secret@redis:6379");
+  });
   it("rejects arbitrary secret file paths and does not fall back to plaintext", () => {
     process.env.REDIS_HOST = "redis.infra";
     process.env.REDIS_PASSWORD = "must-not-be-used";

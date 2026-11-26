@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: logstash
   namespace: elastic-stack
+  annotations:
+    checkov.io/skip: CKV_K8S_35=The Logstash pipeline consumes an API key through an env placeholder; sourced only from a namespaced SecretKeyRef, not plaintext. Revisit with a supported keystore/file flow before production.
 spec:
   replicas: 1
   selector:
@@ -67,7 +69,12 @@ spec:
               name: beats
           env:
             - name: ES_HOST
-              value: "http://elasticsearch:9200"
+              value: "https://elasticsearch.elastic-stack.svc.cluster.local:9200"
+            - name: ES_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-security
+                  key: logstash-api-key
             - name: LS_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
           resources:
@@ -112,6 +119,9 @@ spec:
               mountPath: /usr/share/logstash/data
             - name: logstash-tmp
               mountPath: /tmp
+            - name: elasticsearch-ca
+              mountPath: /run/secrets/elastic
+              readOnly: true
       volumes:
         - name: pipeline
           configMap:
@@ -133,6 +143,12 @@ spec:
           emptyDir: {}
         - name: logstash-tmp
           emptyDir: {}
+        - name: elasticsearch-ca
+          secret:
+            secretName: elasticsearch-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

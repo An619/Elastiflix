@@ -7,9 +7,8 @@ data:
   LOCAL: "true"
   NODE_ENV: "production"
   PUBLIC_HOST: "elastiflix.local"
-  ES_HOST: "http://elasticsearch.elastic-stack.svc.cluster.local:9200"
+  ES_HOST: "https://elasticsearch.elastic-stack.svc.cluster.local:9200"
   ES_INDEX: "elastiflix-movies"
-  ES_API_KEY: ""
   # Redis/RabbitMQ credentials are mounted from backend-secret by the
   # backend Deployment. Do NOT put passwords here — ConfigMaps are plaintext
   # in etcd and in Git.

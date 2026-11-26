@@ -64,29 +64,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: kibana-ingress
-  namespace: elastic-stack
-spec:
-  podSelector:
-    matchLabels:
-      app: kibana
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/component: controller
-      ports:
-        - protocol: TCP
-          port: 5601
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: elasticsearch-egress
   namespace: elastic-stack
 spec:

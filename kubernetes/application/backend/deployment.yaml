@@ -30,6 +30,10 @@ spec:
             - configMapRef:
                 name: app-config
           env:
+            - name: ES_API_KEY_FILE
+              value: /run/secrets/elastiflix/es-api-key
+            - name: NODE_EXTRA_CA_CERTS
+              value: /run/secrets/elastiflix/es-ca.crt
             - name: REDIS_PASSWORD_FILE
               value: /run/secrets/elastiflix/redis-password
             - name: RABBITMQ_PASSWORD_FILE
@@ -69,8 +73,11 @@ spec:
         - name: backend-secrets
           secret:
             secretName: backend-secret
-            optional: true
             items:
+              - key: es-api-key
+                path: es-api-key
+              - key: es-ca.crt
+                path: es-ca.crt
               - key: redis-password
                 path: redis-password
               - key: rabbitmq-password

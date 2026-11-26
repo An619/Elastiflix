@@ -6,6 +6,8 @@ Everything below matches the repo exactly. Practice it once end-to-end before th
 
 ```bash
 git clone https://github.com/An619/Elastiflix.git && cd Elastiflix
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 ./start.sh          # boots the whole ELK + app stack (first run: pulls images, ~3–5 min)
 ```
 
@@ -15,7 +17,7 @@ Have these tabs open and logged in:
 |---|---|---|
 | Elastiflix app | http://localhost:3000 | — |
 | Kibana | http://localhost:5601 | none (demo mode) |
-| RabbitMQ management | http://localhost:15672 | `user` / `elastiflix-rabbit-pass` |
+| RabbitMQ management | http://localhost:15672 | `user` / the password in your `RABBITMQ_PASSWORD` environment variable |
 | GitHub repo + Actions | https://github.com/An619/Elastiflix/actions | — |
 | SonarCloud | https://sonarcloud.io/summary/new_code?id=An619_Elastiflix | — |
 
@@ -65,7 +67,7 @@ Open **GitHub Actions** and walk left → right:
 
 1. `kubernetes/application/frontend/deployment.yaml` → Argo Rollouts has a 20% → 30s pause → 100% step sequence, but no configured traffic router or metric analysis. Do not claim a true 20% user split or automatic health-based rollback.
 2. `argocd-*.yaml` — separate Argo CD Application manifests for app, infra, ELK, and monitoring, with automated prune + self-heal. The bootstrap applies those Application objects; this is not currently an App-of-Apps root.
-3. Secrets: `kubernetes/infra/*-sealedsecret.yaml` — encrypted at rest in git; only the in-cluster sealed-secrets controller can open them. On EKS the backend secret comes from **AWS Secrets Manager via ESO + IRSA** — no static AWS keys anywhere.
+3. Secrets: local Minikube uses unique random values supplied through environment variables and written to Kubernetes Secrets via private temporary files. On EKS, **AWS Secrets Manager via ESO + a dedicated IRSA service account** owns those targets; the two environments do not share Secret writers.
 4. Images run **non-root**, `drop: [ALL]`, `allowPrivilegeEscalation: false`.
 
 ## 6. Architecture walk-through (1–2 min)
@@ -92,7 +94,7 @@ The frontend is the user-visible surface where canary analysis (errors/latency a
 Quality Gate on new code: 0 new issues/vulnerabilities, ≥ 80% coverage on new lines, 0% duplication. The check is a required status — PRs can't merge red.
 
 **How are secrets handled end-to-end?**
-Local: `.env` (gitignored). Compose/demo: inline demo values clearly marked as such. Kubernetes: Sealed Secrets (encrypted in git). AWS EKS: External Secrets Operator syncs Secrets Manager via IRSA — the cluster never stores a long-lived credential.
+Local Compose/Minikube: generate a unique password in the shell and provide it through the environment; the Minikube bootstrap writes it through a temporary private file. EKS: External Secrets Operator syncs Secrets Manager via a dedicated IRSA role. No plaintext credentials are committed.
 
 **Why is single-node Elasticsearch "yellow"?**
 A single node can't allocate a replica on the same node, so the primary shard is active but unassigned replicas stay yellow forever. Green is expected only in multi-node clusters; healthchecks accept yellow on purpose.

@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastiflix-slo-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  elastiflix-slo.json: |-
+    {
+      "uid": "elastiflix-slo",
+      "title": "Elastiflix SLO and Error Budget",
+      "tags": ["elastiflix", "slo", "sre"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Availability · rolling 7 days",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "100 * elastiflix:slo_availability:ratio7d", "legendFormat": "availability"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 99}, {"color": "green", "value": 99.5}]}}, "overrides": []},
+          "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0}
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Error budget remaining · rolling 7 days",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "100 * elastiflix:slo_error_budget_remaining:ratio7d", "legendFormat": "budget remaining"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 20}, {"color": "green", "value": 50}]}}, "overrides": []},
+          "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0}
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "5-minute server error ratio",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "100 * elastiflix:http_error_ratio:rate5m", "legendFormat": "5xx ratio"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0}, "overrides": []},
+          "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0}
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "HTTP requests per second",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "elastiflix:http_requests:rate5m", "legendFormat": "requests/s"}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6}
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "HTTP response latency · p95",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(elastiflix_http_request_duration_seconds_bucket{route!=\"/healthz\"}[5m])))", "legendFormat": "p95"}],
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6}
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Server error ratio by window",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "100 * elastiflix:http_error_ratio:rate5m", "legendFormat": "5m"},
+            {"expr": "100 * elastiflix:http_error_ratio:rate30m", "legendFormat": "30m"},
+            {"expr": "100 * elastiflix:http_error_ratio:rate6h", "legendFormat": "6h"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14}
+        }
+      ]
+    }

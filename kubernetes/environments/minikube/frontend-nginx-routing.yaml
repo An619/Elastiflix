@@ -1,0 +1,5 @@
+- op: add
+  path: /spec/strategy/canary/trafficRouting
+  value:
+    nginx:
+      stableIngress: app-ingress

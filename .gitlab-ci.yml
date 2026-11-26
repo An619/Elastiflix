@@ -36,13 +36,32 @@ build_backend:
 # ----------------------------------------
 # Stage 2: Security Scanning (DevSecOps)
 # ----------------------------------------
+npm_audit:
+  stage: security
+  image: node:22-alpine
+  script:
+    - node --test scripts/test/npm-audit-policy.test.js
+    - npm --prefix backend run audit:policy -- frontend
+    - npm --prefix backend run audit:policy -- backend
+    - npm audit --omit=dev --audit-level=high --prefix frontend
+    - npm audit --audit-level=high --prefix backend
+
+pip_audit:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - python3 -m pip install --disable-pip-version-check --no-input --only-binary=:all: pip-audit==2.10.1
+    - pip-audit -r data-loader/pip-requirements.txt
+
 trivy_scan:
   stage: security
   image:
-    name: aquasec/trivy:latest
+    name: aquasec/trivy:0.70.0
     entrypoint: [""]
   script:
-    - trivy fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress .
+    # npm audit plus the exact exception policy cover the frontend lockfile.
+    - trivy fs --skip-files frontend/package-lock.json --exit-code 0 --severity HIGH,CRITICAL --no-progress .
+    - trivy fs --skip-files frontend/package-lock.json --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress .
 
 # ----------------------------------------
 # Stage 3: Package (Docker Build & Push)

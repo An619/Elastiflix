@@ -1,4 +1,4 @@
-# ADR 0002: Immutable image tags bound to the git commit SHA
+# ADR 0002: Commit-SHA image tags and reviewed GitOps promotion
 
 - **Status:** Accepted
 - **Date:** 2026-11-25
@@ -10,19 +10,20 @@ Kubernetes manifests referenced `:latest` (or floating tags) historically, which
 
 ## Decision
 
-All Elastiflix images (`an619/elastiflix-frontend`, `an619/elastiflix-backend`) are tagged **exclusively with the full git commit SHA** (`${{ github.sha }}`), and manifests are updated by the pipeline itself:
+Elastiflix images (`an619/elastiflix-frontend`, `an619/elastiflix-backend`) are published with the full source commit SHA as their tag. CI and GitOps promotion are separate:
 
-- `.github/workflows/docker-push.yml` builds and pushes `…:<sha>` on `push` to `main` only.
-- The same job runs `sed` over `kubernetes/application/{frontend,backend}/deployment.yaml` (and the Rollout), commits `chore: update image tags to <sha> [skip ci]`, rebases, and pushes.
-- Argo CD then delivers the referenced SHA (ADR-0001). Image provenance == git provenance.
+- `.github/workflows/docker-push.yml` builds and publishes `…:<sha>` on `push` to `main` after the required checks.
+- CI reports those image references but does not edit or push Kubernetes manifests.
+- A maintainer proposes the image-tag change in a separately reviewed GitOps change. Argo CD deploys only after that change is merged (ADR-0001).
+- A SHA-shaped tag improves traceability, but Docker Hub tag immutability is not enforced. The publish workflow attaches BuildKit SBOM/provenance attestations, signs each pushed digest, and verifies its Cosign certificate identity and OIDC issuer before reporting success.
 
 ## Consequences
 
-- ✅ Every running pod is traceable to an exact commit (`kubectl get pod -o yaml | grep image:`).
-- ✅ Rollback is a revert; there is no mutable pointer to reason about.
-- ✅ The image that reaches main is pre-vetted: `docker-scans` builds from the same Dockerfile/context and Trivy-gates it before `docker-push` runs (both are required gates in `devsecops.yml`).
-- ⚠️ Manifests churn by one line per release; repo hygiene (`[skip ci]`) prevents loop triggers.
-- ⚠️ Digest pinning (`@sha256:`) would be stricter; tracked as future hardening (see `DEMO.md` — "What would you improve next?").
+- ✅ Image references remain traceable to the source commit; signatures are verified against published digests and CI does not directly change desired production state.
+- ✅ Manifest promotion receives a separate review and normal CI before Argo CD syncs it.
+- ✅ `docker-scans` builds from the same Dockerfile/context and Trivy-gates the image before `docker-push` publishes it (both are required gates in `devsecops.yml`).
+- ⚠️ A SHA-shaped tag is not inherently immutable in Docker Hub; digest pinning and registry enforcement remain future hardening.
+- ⚠️ Promotion currently requires a maintainer to create and review the image-reference change; no automated PR creator is configured.
 
 ## Alternatives considered
 

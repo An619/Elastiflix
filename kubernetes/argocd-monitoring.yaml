@@ -3,18 +3,39 @@ kind: Application
 metadata:
   name: monitoring
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: elastiflix
   source:
     repoURL: "https://prometheus-community.github.io/helm-charts"
     chart: kube-prometheus-stack
+    # Pinned chart version: an unpinned monitoring stack can change rule
+    # evaluation or the scrape contract without a review.
     targetRevision: 58.2.2
     helm:
       values: |
         alertmanager:
+          # No approved notification destination, owner, or escalation policy
+          # exists yet, so alerts are visible in Prometheus/Grafana only.
+          # Enabling Alertmanager without that is worse than leaving it off:
+          # it looks like paging coverage that nobody receives. See
+          # docs/security/phase-5-sre-observability.md.
           enabled: false
         prometheus:
           prometheusSpec:
+            # These selectors decide which PrometheusRules and ServiceMonitors
+            # are loaded. Without them the rules in kubernetes/monitoring are
+            # created and never evaluated.
+            ruleSelector:
+              matchLabels:
+                release: monitoring
+            serviceMonitorSelector:
+              matchLabels:
+                release: monitoring
+            ruleNamespaceSelector: {}
+            serviceMonitorNamespaceSelector: {}
+            retention: 7d
             resources:
               requests:
                 memory: 256Mi
@@ -22,6 +43,14 @@ spec:
               limits:
                 memory: 512Mi
         grafana:
+          # Lets the dashboard sidecar pick up ConfigMaps labelled
+          # grafana_dashboard=1 from any namespace.
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              searchNamespace: ALL
           resources:
             requests:
               memory: 128Mi

@@ -1,0 +1,46 @@
+# Machine-checked gate for the frontend canary.
+#
+# Both metrics read series that this branch's backend actually exports. They are
+# service-level signals (the backend does not label metrics by release), so this
+# template detects a canary that breaks request handling, not a canary whose
+# errors happen to be hidden by stable-pod traffic. That limitation is stated in
+# docs/security/phase-4-gitops-progressive-delivery.md.
+#
+# Prerequisite: `monitoring` must be reachable from the elastiflix namespace and
+# the backend ServiceMonitor must be scraped, otherwise every query returns no
+# data and the analysis fails closed (which is the intended behaviour).
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: frontend-canary-health
+  namespace: elastiflix
+spec:
+  metrics:
+    - name: backend-request-volume
+      interval: 30s
+      count: 2
+      failureLimit: 1
+      consecutiveErrorLimit: 1
+      successCondition: result[0] > 0
+      failureCondition: result[0] <= 0
+      provider:
+        prometheus:
+          address: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(elastiflix_http_responses_total[5m])) or vector(0)
+    - name: backend-error-ratio
+      interval: 30s
+      count: 2
+      failureLimit: 1
+      consecutiveErrorLimit: 1
+      successCondition: result[0] <= 0.01
+      failureCondition: result[0] > 0.01
+      provider:
+        prometheus:
+          address: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            (
+              sum(rate(elastiflix_http_responses_total{status_class="5xx"}[5m]))
+              /
+              clamp_min(sum(rate(elastiflix_http_responses_total[5m])), 0.001)
+            ) or vector(1)

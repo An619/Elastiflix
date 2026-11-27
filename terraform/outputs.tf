@@ -13,9 +13,9 @@ output "eks_cluster_name" {
   value       = module.eks.cluster_name
 }
 
-output "cluster_endpoint_public_access" {
-  description = "Whether the public EKS API endpoint is enabled"
-  value       = module.eks.cluster_endpoint_public_access
+output "cluster_endpoint_public_access_cidrs" {
+  description = "CIDRs allowed to reach the public EKS API endpoint; an empty list means public access is disabled and the SSM bastion is the only administrative path (module.eks v20.8.4 does not export the boolean, so this reports the input)."
+  value       = var.cluster_endpoint_public_access_cidrs
 }
 
 output "alb_controller_role_arn" {

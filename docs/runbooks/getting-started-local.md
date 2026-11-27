@@ -167,6 +167,27 @@ are there.
 
 Three dashboards are already loaded under **Kibana → Dashboards → "Elastiflix — …"**.
 
+Confirm they are really there — this asks for ours **by name**, because a bare
+`_find?type=dashboard` returns **115** and every one of them is Metricbeat's
+preloaded set, which looks like success whether ours loaded or not:
+
+```bash
+curl -s -H 'kbn-xsrf: true' \
+  "http://localhost:5601/api/saved_objects/_find?type=dashboard&search=Elastiflix&per_page=20" \
+  | grep -o '"title":"[^"]*"'
+```
+
+**Expected — three titles:**
+
+```
+"title":"Elastiflix — Search Overview"
+"title":"Elastiflix — Infrastructure"
+"title":"Elastiflix — Movie Catalogue"
+```
+
+No output means they did not load: run `./load-dashboards.sh` and read its
+stderr, which names any object Kibana rejected.
+
 ### A8. Stop, and start again
 
 ```bash

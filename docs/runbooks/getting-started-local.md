@@ -218,6 +218,12 @@ curl -s 'http://localhost:9200/elastiflix-logs-*/_count' \
   -d '{"query":{"exists":{"field":"search_query"}}}'
 ```
 
+**Expected: `{"count":90,...}`** — verified on a real stack, and exact: 18 queries
+x 5 rounds, one document per request. If this is 90 while the unfiltered count is
+150, the pipeline is correct and the difference is lifecycle lines. If this is 0
+while the unfiltered count is non-zero, the backend has stopped logging
+`search_query` and the dashboard's panels will be empty for that reason.
+
 If that count is 0, the problem is Filebeat → Logstash, not the dashboard:
 
 ```bash

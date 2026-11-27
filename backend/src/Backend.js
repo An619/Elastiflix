@@ -7,6 +7,7 @@ import RerankConnector from "./RerankConnector.js";
 import SemanticConnector from "./SemanticConnector.js";
 import HybridConnector from "./HybridConnector.js";
 import { log, logged } from "./logger.js";
+import { secretValue } from "./secretValue.js";
 
 import { createClient } from "redis";
 import amqp from "amqplib";
@@ -27,23 +28,23 @@ if (process.env.LOCAL) {
 }
 app.use(express.json());
 
-// --- URL helpers: allow password-only envs (K8s Secrets) ---
-function redisUrl() {
+// --- URL helpers: passwords come from mounted Secret files, not env vars ---
+function redisUrl(readSecretFile) {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
   const host = process.env.REDIS_HOST;
   if (!host) return undefined;
   const port = process.env.REDIS_PORT || "6379";
-  const pass = process.env.REDIS_PASSWORD;
+  const pass = secretValue("REDIS_PASSWORD", readSecretFile);
   return pass ? `redis://:${encodeURIComponent(pass)}@${host}:${port}` : `redis://${host}:${port}`;
 }
 
-function rabbitmqUrl() {
+function rabbitmqUrl(readSecretFile) {
   if (process.env.RABBITMQ_URL) return process.env.RABBITMQ_URL;
   const host = process.env.RABBITMQ_HOST;
   if (!host) return undefined;
   const port = process.env.RABBITMQ_PORT || "5672";
   const user = process.env.RABBITMQ_USER || "user";
-  const pass = process.env.RABBITMQ_PASSWORD;
+  const pass = secretValue("RABBITMQ_PASSWORD", readSecretFile);
   return pass
     ? `amqp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`
     : `amqp://${encodeURIComponent(user)}@${host}:${port}`;

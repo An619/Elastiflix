@@ -311,6 +311,17 @@ Administrator** (Windows) or with `sudo` (Linux):
 minikube tunnel
 ```
 
+The ingress is host-based, so `elastiflix.local` has to resolve to the cluster before a browser can
+use it. Add the hosts once (Linux / macOS / WSL):
+
+```bash
+echo "$(minikube ip) elastiflix.local api.elastiflix.local kibana.local grafana.local argocd.local" | sudo tee -a /etc/hosts
+```
+
+On Windows the file is `C:\Windows\System32\drivers\etc\hosts` and needs an Administrator
+editor. `verify-deployment.sh` reports `elastiflix.local resolves` as **SKIP** when the entry is
+missing, which is why a verdict with skips is weaker than one without.
+
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://elastiflix.local/api/search \
   -H 'Content-Type: application/json' \
@@ -377,6 +388,9 @@ in this branch.
 ---
 
 ## 5. Prove the application actually works
+
+> Starting from a fresh clone rather than debugging a broken one? `docs/runbooks/getting-started-local.md`
+> is the condensed path from clone to verified deployment; this document is the diagnostic version.
 
 ### 5.0 One command instead of all of the below
 

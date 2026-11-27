@@ -136,6 +136,10 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 
 ## 🚀 Quick Start
 
+New here? **[docs/runbooks/getting-started-local.md](docs/runbooks/getting-started-local.md)** walks
+from `git clone` to a verified-working deployment, command by command, including the checks that need
+no cluster at all.
+
 Pick one workflow — all three run the same app:
 
 ### 1. Docker Compose (local ELK demo, ~5 min)
@@ -159,9 +163,12 @@ See [README-ELK.md](README-ELK.md) for the Elastic Stack walkthrough and [LEARN.
 ### 2. Minikube + GitOps (local Kubernetes)
 
 ```bash
-./bootstrap.sh            # minikube + Argo CD + apps + sealed secrets
-minikube tunnel           # in a separate admin shell
+./bootstrap.sh                 # minikube + Argo CD + apps + sealed secrets
+minikube tunnel                # in a separate admin shell
+./scripts/verify-deployment.sh # 43 read-only checks, prints a verdict and exits 0/1
 ```
+
+`rollout status` only proves the containers started; the verifier proves the app answers searches.
 
 Argo CD UI: http://argocd.local (user `admin`; retrieve the generated password with
 `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`) · App: http://elastiflix.local · API: http://api.elastiflix.local

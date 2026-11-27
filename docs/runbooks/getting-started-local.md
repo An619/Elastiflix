@@ -167,6 +167,36 @@ are there.
 
 Three dashboards are already loaded under **Kibana → Dashboards → "Elastiflix — …"**.
 
+### The Search Overview dashboard is empty until something searches
+
+Its four panels read the `elastiflix-logs` index, which Filebeat fills from the
+**backend's own log lines** — one per search request. On a stack where nobody has
+searched yet, "No results found" and `N/A` are the honest answer, not a fault.
+
+`start.sh` finishes by indexing the catalogue, which produces no search traffic.
+So generate some:
+
+```bash
+./generate-traffic.sh 5
+```
+
+That posts 17 queries (including three deliberate zero-result ones) per round,
+directly to the API on `:17700`, then waits for Filebeat to ship them.
+
+**Expected after ~10s, in Discover with the `Elastiflix App Logs` data view:**
+
+```bash
+curl -s 'http://localhost:9200/elastiflix-logs-*/_count'
+# {"count":85,"_shards":{...}}   # 17 queries x 5 rounds
+```
+
+If that count is 0, the problem is Filebeat → Logstash, not the dashboard:
+
+```bash
+docker compose logs filebeat | tail -20     # is it tailing elastiflix-backend?
+docker compose logs logstash | tail -20     # is it receiving on 5044?
+```
+
 Confirm they are really there — this asks for ours **by name**, because a bare
 `_find?type=dashboard` returns **115** and every one of them is Metricbeat's
 preloaded set, which looks like success whether ours loaded or not:

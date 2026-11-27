@@ -231,6 +231,7 @@ app.get("/metrics", async (req, res) => {
 // resultsPerPage, queryConfig) — keying on searchTerm alone returns
 // page-1/unfiltered results for every later request.
 const cachedSearch = async (req, res, next) => {
+  const served = Date.now();
   const { state = {}, queryConfig = {} } = req.body ?? {};
   const { searchTerm } = state;
   if (!searchTerm) return next();
@@ -248,7 +249,10 @@ const cachedSearch = async (req, res, next) => {
           method: req.method,
           path: req.path,
           status: 200,
-          duration_ms: 0,
+          // Time actually spent serving this request, including the Redis
+          // round trip. This used to be hard-coded 0, which made the latency
+          // panel report the cache hit rate rather than search speed.
+          duration_ms: Date.now() - served,
           search_type: "lexical",
           query: searchTerm,
           results: body?.totalResults ?? body?.results?.length ?? 0,

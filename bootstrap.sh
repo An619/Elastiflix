@@ -111,6 +111,29 @@ kubectl apply -f kubernetes/argocd-monitoring.yaml
 kubectl apply -f kubernetes/argocd-ingress.yaml
 kubectl apply -f kubernetes/monitoring-ingress.yaml
 
+# --- Local image overlay -----------------------------------------------------
+# Argo CD syncs `main`, whose manifests carry the *promoted* image tag. The
+# images this script built are tagged with this checkout's commit, so without
+# the overlay both application pods sit in ImagePullBackOff. Apply a rendered
+# copy with the local tag AND switch that Application to manual sync, or
+# selfHeal reverts the tag within a few minutes.
+echo "🏷️  9. Pointing the application at the locally built images (${GIT_SHA})..."
+kubectl -n argocd patch application elastiflix --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+RENDER_DIR="$(mktemp -d)"
+trap 'rm -rf "${RENDER_DIR}"' EXIT
+cp -R kubernetes/application "${RENDER_DIR}/application"
+sed -i.bak "s|an619/elastiflix-backend:.*|an619/elastiflix-backend:${GIT_SHA}|" \
+  "${RENDER_DIR}/application/backend/deployment.yaml"
+sed -i.bak "s|an619/elastiflix-frontend:.*|an619/elastiflix-frontend:${GIT_SHA}|" \
+  "${RENDER_DIR}/application/frontend/deployment.yaml"
+rm -f "${RENDER_DIR}"/application/*/deployment.yaml.bak
+kubectl apply -f "${RENDER_DIR}/application"
+
+echo "⏳ 10. Waiting for the application to become ready..."
+kubectl -n elastiflix rollout status deployment/backend --timeout=300s
+kubectl -n elastiflix rollout status rollout/frontend --timeout=300s
+
 echo ""
 echo "✅ Bootstrap complete. Argo CD 3.6.3, Rollouts ${ARGO_ROLLOUTS_VERSION}, Falco ${FALCO_CHART_VERSION}."
 echo "⚠️  Open an Administrator PowerShell and run: net stop was /y && minikube tunnel"
@@ -124,6 +147,10 @@ else
   echo "   initial password: retrieve with 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d'"
 fi
 echo ""
-echo "ℹ️  The manifests in kubernetes/application reference a commit-SHA image tag."
-echo "   For local testing, pin the Rollout/Deployment to the tag built in step 2"
-echo "   with a local-only manifest edit, or push the images and let CI promote them."
+echo "ℹ️  Images deployed: an619/elastiflix-{frontend,backend}:${GIT_SHA}"
+echo "   The elastiflix Application is set to manual sync so selfHeal does not"
+echo "   revert the local tag. Re-enable automated sync before testing GitOps."
+echo ""
+echo "📚 Elasticsearch starts empty and Logstash indexes the catalogue in the"
+echo "   background; first search may return nothing for a few minutes."
+echo "   Watch it:  kubectl -n elastic-stack logs deploy/logstash -c prepare-data -f"

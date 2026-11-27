@@ -51,16 +51,34 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          # The catalogue source is an explicit input rather than a URL buried
+          # in the command. Fetching from `main` on every pod start is not
+          # reproducible - the data can change under you - and a
+          # NetworkPolicy can legitimately block it, which shows up as a green
+          # pod with an empty index. Override CATALOGUE_URL for an air-gapped
+          # cluster, or pre-populate the PVC and leave /data/movies.ndjson in
+          # place: the download is then skipped.
+          env:
+            - name: CATALOGUE_URL
+              value: "https://raw.githubusercontent.com/An619/Elastiflix/main/data-loader/movies/movies.json.gz"
           command:
             - sh
             - -c
             - |
               set -e
-              if [ ! -f /data/movies.ndjson ]; then
-                echo "Downloading movies.json.gz..."
-                wget -q -O /data/movies.json.gz "https://raw.githubusercontent.com/An619/Elastiflix/main/data-loader/movies/movies.json.gz"
-                python3 -c "import gzip, json; movies = json.load(gzip.open('/data/movies.json.gz', 'rt', encoding='utf-8')); open('/data/movies.ndjson', 'w', encoding='utf-8').write('\n'.join(json.dumps(m, ensure_ascii=False) for m in movies) + '\n'); print(f'{len(movies)} movies ready')"
+              if [ -f /data/movies.ndjson ]; then
+                echo "movies.ndjson already present; skipping download"
+                exit 0
               fi
+              echo "Downloading ${CATALOGUE_URL}..."
+              if ! wget -q -O /data/movies.json.gz "${CATALOGUE_URL}"; then
+                echo "ERROR: could not download the catalogue from ${CATALOGUE_URL}" >&2
+                echo "       This is usually egress/NetworkPolicy. Either allow it," >&2
+                echo "       set CATALOGUE_URL to a reachable mirror, or copy" >&2
+                echo "       movies.ndjson onto the volume and restart." >&2
+                exit 1
+              fi
+              python3 -c "import gzip, json; movies = json.load(gzip.open('/data/movies.json.gz', 'rt', encoding='utf-8')); open('/data/movies.ndjson', 'w', encoding='utf-8').write('\n'.join(json.dumps(m, ensure_ascii=False) for m in movies) + '\n'); print(f'{len(movies)} movies ready')"
           volumeMounts:
             - name: data
               mountPath: /data

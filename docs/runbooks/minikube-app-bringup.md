@@ -14,9 +14,9 @@ a working search box without guessing.
 
 | # | Symptom you will see | Cause (verified in the tree) | Fix |
 | --- | --- | --- | --- |
-| **B1** | Both app pods `ImagePullBackOff` | Manifests pin tag `30703b0`; `bootstrap.sh` builds `$(git rev-parse HEAD)` | §2 override |
-| **B2** | Backend up, every search returns 0 results; `_cat/indices` has no `elastiflix-movies` | Logstash init container downloads the catalogue from **`raw.githubusercontent.com/.../main/`** over 443, and Calico applies a default-deny egress policy | §3 |
-| **B3** | Page loads, every `/api/search` returns **502** | `frontend/nginx.conf` hardcodes `resolver 127.0.0.11` — that is **Docker's** embedded DNS, not Kubernetes' (`10.96.0.10`) | §4 |
+| **B1** | Both app pods `ImagePullBackOff` | Manifests pin tag `30703b0`; `bootstrap.sh` builds `$(git rev-parse HEAD)` | **Fixed in `bootstrap.sh` step 9** — it now renders a local-tagged overlay and sets the Application to manual sync. §2 is the manual equivalent |
+| **B2** | Backend up, every search returns 0 results; `_cat/indices` has no `elastiflix-movies` | Logstash init container downloads the catalogue from **`raw.githubusercontent.com/.../main/`** at pod start, which a NetworkPolicy or a flaky network can block | **Improved** — the URL is now a `CATALOGUE_URL` env var and a failed download exits with an explanatory error instead of silently indexing nothing. §3 is still the fix path |
+| **B3** | Page loads, every `/api/search` returns **502** | `frontend/nginx.conf` hardcoded `resolver 127.0.0.11` — **Docker's** embedded DNS, not Kubernetes' | **Fixed in `frontend/nginx.conf`** — the directive is gone, so nginx uses the pod resolver. §4 remains only for images built before this change |
 | **B4** | Rule evaluation shows no `elastiflix:*` series | Same tag mismatch applies to the backend `ServiceMonitor`? No — see §5; this one only appears if you skipped B2 | §5 |
 
 B2 and B3 are the interesting ones: **the pods are green while the application is broken.** That is

@@ -84,7 +84,10 @@ jobs:
             - name: Validate Ansible playbook syntax
               run: |
                   python3 -m venv /tmp/ansible-venv
-                  /tmp/ansible-venv/bin/pip install --disable-pip-version-check --no-input ansible-core==2.11.12
+                  # 2.17.x is the oldest line that supports the runner's Python
+                  # 3.12; 2.11 (previously pinned) only runs on Python <= 3.10 and
+                  # fails at import time on the runner.
+                  /tmp/ansible-venv/bin/pip install --disable-pip-version-check --no-input ansible-core==2.17.7
                   /tmp/ansible-venv/bin/ansible-playbook --syntax-check ansible/playbook.yml
 
             # --- Kubernetes manifest validation: strict, no schema suppression ---

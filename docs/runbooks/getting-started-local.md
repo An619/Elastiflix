@@ -111,11 +111,25 @@ at.
 curl -s http://localhost:9200/elastiflix-movies/_count
 ```
 
-**Expected:**
+**Expected:** `"count":6959`.
 
-```json
-{"count":6959,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}
-```
+⚠️ **`_cat/indices` reports a much larger `docs.count` for this index — 60596, not
+6959. Both numbers are correct and they count different things.** `_cat/indices`
+sums each shard's Lucene document count, which includes the documents behind the
+two `nested`-mapped fields:
+
+| | count |
+|---|---|
+| movies | 6959 |
+| + `keywords` entries (nested → one hidden document each) | 51865 |
+| + `belongs_to_collection` entries (nested) | 1772 |
+| = Lucene `docs.count` | **60596** |
+
+Use `_count` or `_search` when you mean "how many movies" — they report
+`hits.total` over root documents. `_cat/indices` is answering "how much data is in
+this shard", which is the right question for sizing and the wrong one for
+catalogue size. The same distinction appears in the movies template, where
+`keywords` and `belongs_to_collection` are the only nested fields.
 
 `"count":0` means Logstash has not finished — check `docker compose logs logstash` before assuming
 something is broken. This is the single most common false alarm.

@@ -72,9 +72,14 @@ spec:
             requests:
               cpu: "100m"
               memory: "256Mi"
+              ephemeral-storage: "256Mi"
             limits:
               memory: "512Mi"
               cpu: "500m"
+              # S6870 wants the container's own ephemeral-storage bound, not just
+              # the volume's. Must exceed the sum of the emptyDir sizeLimits
+              # below (512Mi + 64Mi) or the pod is rejected at admission.
+              ephemeral-storage: "1Gi"
           # readOnlyRootFilesystem above makes every writable path explicit.
           volumeMounts:
             - name: data
@@ -89,7 +94,7 @@ spec:
         # before, since the container layer was never durable either.
         - name: data
           emptyDir:
-            sizeLimit: 1Gi
+            sizeLimit: 512Mi
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi

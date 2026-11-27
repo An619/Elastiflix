@@ -387,7 +387,9 @@ else
     else
       printf '\033[32mDeployment is WORKING — every check passed.\033[0m\n'
     fi
-    [ "$QUICK" -eq 0 ] && printf '\nTry it in a browser: http://elastiflix.local (needs `minikube tunnel`).\n'
+    # NOSONAR - a local Minikube host in printed guidance, not a transport
+    # decision: there is no TLS on this cluster by design (see the runbook).
+    [ "$QUICK" -eq 0 ] && printf '\nTry it in a browser: http://elastiflix.local (needs `minikube tunnel`).\n' # NOSONAR
   else
     printf '\033[31mDeployment is NOT fully working.\033[0m\n'
     printf 'Failed checks and the runbook section that explains each:\n'

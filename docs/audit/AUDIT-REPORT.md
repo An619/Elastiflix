@@ -1,7 +1,7 @@
 # Elastiflix — Audit Report
 
 **Audited baseline:** `main` @ `b87015748d6cc14dfa4935e7f15f5ff5c1b7874a`
-**Review branch:** `arena/04e9752b-elastiflix` @ `3c5c33b` — 22 commits, 83 files, +5631 / −255
+**Review branch:** `arena/04e9752b-elastiflix` @ `5142e06` — 23 commits, 84 files, +5913 / −255
 **Pull request:** #34 (open, mergeable, not merged)
 **Report date:** 2026-11-27
 
@@ -168,7 +168,7 @@ by this audit.
 
 ### 6.3 CI status on the final commit
 
-Run `45957830804` @ `3c5c33b`: `code-tests`, `checkov-iac-scan`, `trivy-filesystem-scan`,
+Run `45970892187` @ `5142e06`: `code-tests`, `checkov-iac-scan`, `trivy-filesystem-scan`,
 `trivy-image-scan` (backend + frontend), `npm-audit`, `python-audit`, `hadolint`, `gitleaks`,
 `sonar` — all pass. External **SonarCloud Code Analysis: pass**. `docker-push`: skipped by
 design (main-only).
@@ -241,9 +241,10 @@ decision. **Terraform modules are version-pinned, not commit-pinned.**
 
 ---
 
-## 10. Commits on this branch (22)
+## 10. Commits on this branch (23)
 
 ```
+5142e06 docs: add the consolidated audit report
 3c5c33b ci: retrigger pipeline (no run was created for fd3940b)
 fd3940b docs: audit repository and CI/CD architecture against the implementation
 1326d31 docs(audit): correct the local-tooling limitations now that promql-parser runs here

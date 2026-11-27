@@ -12,6 +12,31 @@ cd "$(dirname "$0")"
 ES="http://localhost:9200"
 KB="http://localhost:5601"
 
+# --- A real Python interpreter ---------------------------------------------
+# `python3` is not a reliable name on Windows: the Microsoft Store installs a
+# stub at that path which prints "Python was not found ..." and exits 9009. It
+# sits on PATH ahead of a real install, so a bare `python3` call fails in a way
+# that looks like the script is broken - under `set -e` the script dies with
+# exit 49 and no explanation. Probe each candidate and keep the first that runs.
+#
+# `py -3` is the Windows Python Launcher, installed with the standard
+# interpreter, and the Store stub does not shadow it.
+PYTHON=""
+for candidate in "python3" "python" "py -3"; do
+  # shellcheck disable=SC2086 # $candidate is a deliberate word list ("py -3")
+  if $candidate -c 'import sys' >/dev/null 2>&1; then PYTHON="$candidate"; break; fi
+done
+if [[ -z "$PYTHON" ]]; then
+  echo "ERROR: no working Python interpreter found (tried: python3, python, py -3)." >&2
+  echo "       On Windows, 'python3' is usually the Microsoft Store stub, which is" >&2
+  echo "       not Python. Fix it either way:" >&2
+  echo "         - install from https://www.python.org/downloads/ and tick" >&2
+  echo "           \"Add python.exe to PATH\"; or" >&2
+  echo "         - Settings > Apps > Advanced app settings > App execution aliases," >&2
+  echo "           and turn off the python3/python entries." >&2
+  exit 1
+fi
+
 # --- 1. The movie catalogue -------------------------------------------------
 # Elastiflix ships movies.json.gz: one big JSON array. Logstash's file input
 # wants one document per line, so convert it. Skipped if already done.
@@ -21,7 +46,7 @@ KB="http://localhost:5601"
 if [[ ! -f elk/data/movies.ndjson ]]; then
   echo "==> Preparing the movie catalogue"
   mkdir -p elk/data
-  python3 - <<'PY'
+  $PYTHON - <<'PY'
 import gzip, json, os
 with gzip.open("data-loader/movies/movies.json.gz", "rt", encoding="utf-8") as fh:
     movies = json.load(fh)
@@ -34,6 +59,11 @@ print(f"    {len(movies)} movies ready")
 PY
 fi
 
+[[ -f elk/data/movies.ndjson ]] || {
+  echo "ERROR: elk/data/movies.ndjson was not produced, so there is no catalogue" >&2
+  echo "       to index. Re-run ./start.sh and read the error above." >&2
+  exit 1
+}
 EXPECTED=$(wc -l < elk/data/movies.ndjson | tr -d ' ')
 
 # --- 2. The stack -----------------------------------------------------------

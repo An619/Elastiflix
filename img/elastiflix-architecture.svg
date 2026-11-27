@@ -92,7 +92,7 @@
   <g font-size="10.5">
     <rect x="84" y="388" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
     <rect x="92" y="395" width="8" height="8" rx="2" fill="#34d399"/>
-    <text x="110" y="403.5"><tspan font-weight="700" fill="#dce6ff">Tests</tspan><tspan fill="#93a6d0"> — jest 13/13 · node --test 26/26 · terraform validate</tspan></text>
+    <text x="110" y="403.5"><tspan font-weight="700" fill="#dce6ff">Tests</tspan><tspan fill="#93a6d0"> — jest 13/13 · node --test 38/38 · terraform validate</tspan></text>
 
     <rect x="84" y="415" width="412" height="22" rx="9" fill="#1a2547" fill-opacity="0.55" stroke="#3a4d7d" stroke-opacity="0.5"/>
     <rect x="92" y="422" width="8" height="8" rx="2" fill="#34d399"/>
@@ -138,12 +138,12 @@
   <rect x="604" y="158" width="238" height="24" rx="12" fill="#33270f" stroke="#8a6d1f"/>
   <text x="723" y="174" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffd479" letter-spacing="1.4">STEP 2 · DELIVER · GITOPS</text>
 
-  <!-- tag bump bot -->
+  <!-- reviewed promotion (CI has no write access) -->
   <rect x="604" y="200" width="422" height="66" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
   <rect x="604" y="200" width="5" height="66" rx="2.5" fill="#ffd479"/>
-  <text x="628" y="223" font-size="13.5" font-weight="700" fill="#f2f6ff">Image-tag bump (bot)</text>
-  <text x="628" y="241" font-size="10.5" fill="#93a6d0">docker-push rewrites image: fields in</text>
-  <text x="628" y="256" font-size="10.5" fill="#93a6d0">kubernetes/application · commits back [skip ci]</text>
+  <text x="628" y="223" font-size="13.5" font-weight="700" fill="#f2f6ff">Reviewer promotes digest</text>
+  <text x="628" y="241" font-size="10.5" fill="#93a6d0">docker-push reports the image digest;</text>
+  <text x="628" y="256" font-size="10.5" fill="#93a6d0">kubernetes/application · promotion is a reviewed commit</text>
   <line x1="815" y1="266" x2="815" y2="286" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
 
   <!-- manifests -->
@@ -165,8 +165,8 @@
   <rect x="604" y="448" width="422" height="64" rx="12" fill="url(#nodeGrad)" stroke="#2b3d63"/>
   <rect x="604" y="448" width="5" height="64" rx="2.5" fill="#a78bfa"/>
   <text x="628" y="471" font-size="13.5" font-weight="700" fill="#f2f6ff">Argo Rollouts</text>
-  <text x="628" y="489" font-size="10.5" fill="#93a6d0">frontend canary — 20% weight → pause 30s → 100%</text>
-  <text x="628" y="504" font-size="10.5" fill="#93a6d0">bad deploys never see full traffic</text>
+  <text x="628" y="489" font-size="10.5" fill="#93a6d0">frontend canary — 10% · 25% · 50% · 100%</text>
+  <text x="628" y="504" font-size="10.5" fill="#93a6d0">each step gated by analysis · bad deploys never see full traffic</text>
   <line x1="815" y1="512" x2="815" y2="532" stroke="#7186b8" stroke-width="2" marker-end="url(#arr)"/>
 
   <!-- secrets pair -->
@@ -275,7 +275,7 @@
     <circle cx="1400" cy="633" r="3.2" fill="#ffd479"/>
     <text x="1414" y="637">Grafana — cluster dashboards</text>
     <circle cx="1400" cy="661" r="3.2" fill="#ffd479"/>
-    <text x="1414" y="665">Velero → MinIO <tspan fill="#7288b3">(velero ns)</tspan></text>
+    <text x="1414" y="665">ES snapshots → S3 <tspan fill="#7288b3">(SLM, daily)</tspan></text>
     <circle cx="1400" cy="689" r="3.2" fill="#ffd479"/>
     <text x="1414" y="693">Metricbeat — container metrics</text>
   </g>

@@ -6,6 +6,13 @@
 
 **Review branch:** `arena/04e9752b-elastiflix`, branched from that commit.
 
+## Companion audit
+
+Repository layout, the workflow caller/trigger graph, and whether the README and
+`img/elastiflix-architecture.svg` match the implemented Docker, Kubernetes/GitOps,
+Terraform, Ansible and CI/CD paths are covered separately in
+[`repository-architecture.md`](repository-architecture.md).
+
 ## Why this audit trusts only the tree, not PR status
 
 `main` was force-reverted and re-written as a squashed/orphan history. Evidence:

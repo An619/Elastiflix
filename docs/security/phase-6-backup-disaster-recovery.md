@@ -17,10 +17,10 @@ non-conforming snapshot name).
 
 | Component | State | Evidence |
 |---|---|---|
-| Elasticsearch snapshot/SLM tooling | **Absent from `main`** — only on PR #32 | `git diff origin/main origin/arena-90ec80bf` lists `scripts/elasticsearch-snapshot.sh` as added |
+| Elasticsearch snapshot/SLM tooling | **Delivered on this branch** — was absent from `main`, only on PR #32 | `git diff origin/main origin/arena-90ec80bf` lists `scripts/elasticsearch-snapshot.sh` as added; restored here as `scripts/elasticsearch-snapshot.sh` + mocked test |
 | Terraform state bucket durability | **Partially configured** — `encrypt = true` and a DynamoDB lock table, but no versioning/PITR proven | `terraform/backend.tf` |
 | MinIO | Present, demo-only, placeholder credentials | `minio.yaml` |
-| Velero | **Absent** — `README.md` mentions it, no manifests, `.gitignore` has `credentials-velero` | `grep -rn velero` |
+| Velero | **Absent, and no longer claimed** — `README.md` used to mention it; this branch removed that claim (see `docs/audit/repository-architecture.md` finding A5). No manifests, no namespace | `grep -rn velero` returns only audit documents |
 | Restore ever tested | **No** | no snapshot has been taken |
 
 `terraform/backend-bootstrap.tf` (added in this branch) closes the state-bucket

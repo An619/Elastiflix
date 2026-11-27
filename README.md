@@ -33,12 +33,14 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 
 1. **A developer pushes** to a branch / opens a PR. `devsecops.yml` fans out to parallel gates: code tests, Gitleaks, dependency audits, Hadolint, SonarCloud, Trivy, Checkov.
 2. **On merge to `main`** the same gates go green, then `docker-push` builds both images with `docker/build-push-action` and pushes them to Docker Hub tagged with the **commit SHA** (never `latest`).
-3. The pipeline then **rewrites `image:` fields** in `kubernetes/application/` and commits them back with `[skip ci]`.
+3. The pipeline has **read-only access to the repository** and cannot commit. It reports the digest of each published image (`an619/elastiflix-backend@sha256:…`) in the job summary; promotion is a **reviewed change** to the `image:` field in `kubernetes/application/`, per [ADR-0001](docs/adr/0001-gitops-pull-based-delivery.md) and [ADR-0002](docs/adr/0002-immutable-image-tags-git-sha.md).
 4. **Argo CD** (watching `HEAD` of this repo, automated sync + `selfHeal` + `prune`) detects the manifest diff and converges the cluster to it.
 5. **Argo Rollouts** releases the new frontend gradually: **10% → 25% → 50% → 100%**, each step gated by an AnalysisRun on request volume and 5xx ratio. A failed analysis aborts and returns traffic to the stable Service.
 6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
-8. **Observability** is wired in, not bolted on: Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs, Prometheus + Grafana for metrics, Velero + MinIO for backups.
+8. **Observability** is wired in, not bolted on: Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs, Prometheus + Grafana for metrics and SLO burn-rate alerts.
+9. **Backups** are taken by the Elasticsearch snapshot client (`scripts/elasticsearch-snapshot.sh`, SLM-backed) into an S3 repository — procedure and RPO/RTO in
+[docs/security/phase-6-backup-disaster-recovery.md](docs/security/phase-6-backup-disaster-recovery.md). There is no Velero installation in this repository.
 
 > Search data model: the catalog (`data-loader/movies/movies.json.gz`) is bulk-indexed by `data-loader/index-data.py`, which derives the `user_score` facet from TMDB `vote_average` and pulls ELSER/E5 inference pipelines (`data-loader/config/`) so the same index serves BM25, vector semantic, hybrid, and reranked retrieval.
 
@@ -77,7 +79,7 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 |---|---|---|
 | **Docker (multi-stage builds)** | Packaging | `frontend/Dockerfile.prod` (CRA build → unprivileged nginx), `backend/Dockerfile.prod` (deps → runtime, npm removed, `USER node`) |
 | **Docker Compose** | Local one-shot ELK | Full stack + beats + app in one command (`start.sh`) — the fastest way to hack on this repo |
-| **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, `argocd`, `velero` |
+| **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, plus `argocd` from the bootstrap (`kubernetes/namespaces/namespaces.yaml`) |
 | **NGINX Ingress Controller** | Edge routing | Host-based rules: app, API, Kibana, Argo CD, Grafana, MinIO |
 | **Argo Rollouts** | Progressive delivery | Frontend canary Rollout: `10% → 25% → 50% → 100%` with Prometheus-backed AnalysisRuns that abort on failure |
 | **Helm** | Chart management | Infra values (`helm/elasticsearch`, `helm/redis`, `helm/rabbitmq`) + installs Argo CD, ESO, ALB controller, kube-prometheus-stack |
@@ -91,7 +93,7 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 | **Sealed Secrets** | Encrypted secrets in git | Redis/RabbitMQ creds are sealed (`kubernetes/infra/*-sealedsecret.yaml`); only the in-cluster controller can decrypt |
 | **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → K8s Secrets via **IRSA** (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
 | **GitHub Actions** | CI/CD engine | Reusable workflows fanned out by `devsecops.yml`; all third-party actions **pinned to commit SHAs** |
-| **Velero + MinIO** | Backup & restore | Namespace `velero` backs up cluster state to S3-compatible MinIO (`minio.yaml`) |
+| **Elasticsearch SLM snapshots** | Backup & restore | `scripts/elasticsearch-snapshot.sh` drives the snapshot lifecycle: daily 02:30 UTC, 30-day expiry, `elastiflix-movies` only, S3 repository ([backup/DR design](docs/security/phase-6-backup-disaster-recovery.md)) |
 | **Reviewed promotion** | GitOps trigger | `docker-push` publishes `<sha>`-tagged, signed images and reports their digests; promoting one into the manifests is a reviewed commit |
 
 ### 🛡️ DevSecOps & quality gates
@@ -161,7 +163,8 @@ See [README-ELK.md](README-ELK.md) for the Elastic Stack walkthrough and [LEARN.
 minikube tunnel           # in a separate admin shell
 ```
 
-Argo CD UI: http://argocd.local (`admin` / `admin123`) · App: http://elastiflix.local · API: http://api.elastiflix.local
+Argo CD UI: http://argocd.local (user `admin`; retrieve the generated password with
+`kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`) · App: http://elastiflix.local · API: http://api.elastiflix.local
 
 ### 3. AWS EKS (Terraform + Ansible)
 

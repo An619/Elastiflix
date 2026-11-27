@@ -483,7 +483,7 @@ repository.
 | What you see | What it usually is |
 |---|---|
 | `Cannot connect to the Docker daemon` | Docker Desktop not started |
-| `Binary file (standard input) matches` after loading dashboards | Fixed in `start.sh` — it came from a `| grep -v` pipe over a script that printed nothing. Update to the current branch; on old code it means the dashboards did **not** load |
+| `Binary file (standard input) matches` after loading dashboards | Harmless on the old `start.sh`: the dashboards **do** load — confirmed on a real Windows stack (all three titles present afterwards). The message is grep refusing to print a stream it considers binary. **Which byte triggers it on Windows was not determined** — the em-dashes in the titles, the box-drawing characters, or something else in the environment. It was a warning sign that the step's failure was being masked, not evidence of a failure — see `841f1a2` |
 | `Python was not found; ... Microsoft Store`, exit code 49 | `python3` is the Store stub, not Python. `start.sh` now probes `python3`, `python`, `py -3` and uses the first that runs; if none do it says so. Fix: install from python.org with "Add python.exe to PATH", or disable the alias under Settings → Apps → Advanced app settings → App execution aliases |
 | `Kibana did not come up in 240s` | not enough RAM; check `docker compose logs kibana` |
 | `_count` is 0 | Logstash still indexing (wait), or `docker compose logs logstash` |

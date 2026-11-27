@@ -84,9 +84,10 @@ jobs:
             - name: Validate Kubernetes Manifests
               run: |
                   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
-                  # Unknown custom-resource schemas (e.g. Argo Rollouts / ESO) are
-                  # explicitly reported as skipped; built-in Kubernetes schemas
-                  # remain strict and any validation error fails this job.
-                  /tmp/kubeconform -strict -ignore-missing-schemas -summary \
+                  /tmp/kubeconform \
+                    -strict \
+                    -summary \
+                    -schema-location default \
+                    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/b50f3fbc45169a14b6d2d3f767b32fd96ef4a3fa/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
                     kubernetes/application/ kubernetes/infra/ \
                     kubernetes/elastic-stack/ kubernetes/aws/ kubernetes/monitoring/

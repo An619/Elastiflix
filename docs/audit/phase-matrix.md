@@ -37,7 +37,8 @@ tool produced it:
 | `terraform fmt`/`validate` | `python-hcl2` parse of all 10 `*.tf` files + `terraform validate` was **not** run | Syntax-level only; provider/argument validation unverified |
 | `checkov` (Kubernetes + Terraform) | `checkov==3.4.10` installed from PyPI | Same version as CI |
 | `trivy` image/fs scan | none (registries unreachable) | Unverified locally; CI-verified on `main` run `45944004350` |
-| `actionlint`, `ansible-playbook --syntax-check`, `promql-parser` | not installed | Unverified locally |
+| `actionlint`, `ansible-playbook --syntax-check` | not installed in the audit sandbox (release-asset and raw.githubusercontent downloads are blocked) | Unverified locally; both run in CI and pass on the review branch |
+| `promql-parser` | installed from PyPI in the review branch's test venv | Same parser CI uses, same pinned version |
 
 ## Matrix
 

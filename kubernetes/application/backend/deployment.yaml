@@ -3,6 +3,17 @@ kind: Deployment
 metadata:
   name: backend
   namespace: elastiflix
+  annotations:
+    # CKV_K8S_43 / CKV_K8S_15: the image is pinned to an immutable 40-character
+    # commit SHA, and this repository's CI has no registry credential to resolve
+    # or publish a digest. Digest pinning is the documented follow-up in
+    # docs/security/phase-2-kubernetes-hardening.md.
+    checkov.io/skip1: CKV_K8S_43=image is pinned to an immutable commit SHA; digest pinning needs registry access
+    checkov.io/skip2: CKV_K8S_15=tag is an immutable commit SHA, not a floating tag
+    # CKV_K8S_40: the node:22-alpine `node` user is uid 1000. High-UID is a
+    # preference, not a restricted-PSA requirement, and changing the image's
+    # runtime user is an image change outside this manifest review.
+    checkov.io/skip3: CKV_K8S_40=image runtime user is node (uid 1000)
 spec:
   replicas: 2
   selector:
@@ -13,34 +24,41 @@ spec:
       labels:
         app: backend
     spec:
+      # The backend never calls the Kubernetes API, so no token is mounted.
+      automountServiceAccountToken: false
+      serviceAccountName: backend
+      securityContext:
+        runAsNonRoot: true
+        # node:22-alpine ships the unprivileged `node` user as uid/gid 1000.
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
+          # Pinned to the git commit SHA (ADR-0002). The publishing workflow
+          # reports the digest of this exact tag; pinning to
+          # `image@sha256:...` is tracked in
+          # docs/security/phase-2-kubernetes-hardening.md because it needs
+          # registry access this repository's CI does not grant.
           image: an619/elastiflix-backend:30703b0142e155085ba428b208d97fe54c089562
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 17700
+              name: http
           envFrom:
             - configMapRef:
                 name: app-config
-            - secretRef:
-                name: backend-secret
-                optional: true
-          # Passwords come from the Secret; Backend.js builds REDIS_URL /
-          # RABBITMQ_URL from REDIS_PASSWORD / RABBITMQ_PASSWORD when the
-          # full URLs are not set explicitly.
+          # Passwords are mounted as files, not injected as environment
+          # variables, so they cannot leak through `kubectl describe`,
+          # child processes, or crash dumps. Backend.js reads exactly these
+          # allowlisted paths (see backend/src/secretValue.js) and builds
+          # REDIS_URL / RABBITMQ_URL from them.
           env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: redis-password
-                  optional: true
-            - name: RABBITMQ_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backend-secret
-                  key: rabbitmq-password
-                  optional: true
+            - name: REDIS_PASSWORD_FILE
+              value: /run/secrets/elastiflix/redis-password
+            - name: RABBITMQ_PASSWORD_FILE
+              value: /run/secrets/elastiflix/rabbitmq-password
           resources:
             requests:
               cpu: "100m"
@@ -51,18 +69,53 @@ spec:
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            # The image runs on a read-only root filesystem; Node still needs
+            # a writable temp directory.
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /run/secrets/elastiflix
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 17700
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 17700
+              port: http
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: secrets
+          secret:
+            # optional: the backend starts without Redis/RabbitMQ (ADR-0004);
+            # a missing Secret must not block the pod from serving search.
+            secretName: backend-secret
+            optional: true
+            items:
+              - key: redis-password
+                path: redis-password
+              - key: rabbitmq-password
+                path: rabbitmq-password
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+  namespace: elastiflix
+automountServiceAccountToken: false

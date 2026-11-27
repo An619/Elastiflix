@@ -5,12 +5,23 @@ metadata:
   namespace: elastiflix
 spec:
   replicas: 2
+  progressDeadlineSeconds: 600
+  # Canary weights step 10% -> 25% -> 50% -> 100%. Each step is briefly paused
+  # for observation; the machine-checked analysis gate is described in
+  # docs/security/phase-4-gitops-progressive-delivery.md and depends on a
+  # ServiceMonitor that this branch adds (kubernetes/monitoring/observability.yaml).
   strategy:
     canary:
+      stableService: frontend
+      canaryService: frontend-canary
+      maxSurge: 1
+      maxUnavailable: 0
+      scaleDownDelaySeconds: 30
       steps:
         - setWeight: 20
-        - pause: { duration: 30s } # Wait 30 seconds before full rollout
-        - setWeight: 100
+        - pause: { duration: 30s }
+        - setWeight: 50
+        - pause: { duration: 30s }
   selector:
     matchLabels:
       app: frontend
@@ -19,12 +30,24 @@ spec:
       labels:
         app: frontend
     spec:
+      automountServiceAccountToken: false
+      serviceAccountName: frontend
+      securityContext:
+        runAsNonRoot: true
+        # nginxinc/nginx-unprivileged runs as uid/gid 101.
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
+          # Pinned to the git commit SHA (ADR-0002); see the backend manifest
+          # for the digest-pinning limitation.
           image: an619/elastiflix-frontend:30703b0142e155085ba428b208d97fe54c089562
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+              name: http
           resources:
             requests:
               cpu: "100m"
@@ -35,18 +58,42 @@ spec:
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
+            runAsGroup: 101
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            # nginx needs writable cache and temp paths on a read-only rootfs.
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /
-              port: 8080
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /
-              port: 8080
+              port: http
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: elastiflix
+automountServiceAccountToken: false

@@ -54,6 +54,17 @@ metadata:
   namespace: elastic-stack
   labels:
     app: filebeat
+  annotations:
+    # Filebeat is a node-log collector, so several checks are structurally
+    # inapplicable. Each exception is scoped to this one workload; the
+    # elastic-stack namespace is audit+warn rather than enforce for this reason.
+    checkov.io/skip1: CKV_K8S_43=upstream image pinned to a reviewed release tag; digest pinning needs registry access
+    checkov.io/skip2: CKV_K8S_15=static reviewed release tag
+    checkov.io/skip3: CKV_K8S_23=node log files under /var/log are root-owned; a non-root collector cannot read them
+    checkov.io/skip4: CKV_K8S_40=root is required for the same reason as CKV_K8S_23
+    checkov.io/skip5: CKV_K8S_22=filebeat persists its registry under /usr/share/filebeat/data on the node filesystem
+    checkov.io/skip6: CKV_K8S_38=add_kubernetes_metadata requires the projected service-account token and its ClusterRole
+    checkov.io/skip7: CKV_K8S_25=DAC_READ_SEARCH is the minimum capability needed to read root-owned log files with all others dropped
 spec:
   selector:
     matchLabels:
@@ -65,6 +76,13 @@ spec:
     spec:
       serviceAccountName: filebeat
       terminationGracePeriodSeconds: 30
+      # Filebeat must read node log files owned by root, so this pod cannot meet
+      # the restricted Pod Security Standard. The elastic-stack namespace is
+      # therefore audit+warn only; every other Elastic workload is hardened.
+      securityContext:
+        runAsNonRoot: false
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: filebeat
           image: docker.elastic.co/beats/filebeat:9.1.0
@@ -76,12 +94,34 @@ spec:
                   fieldPath: spec.nodeName
           securityContext:
             runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # Filebeat only needs to read the mounted log files.
+              add: ["DAC_READ_SEARCH"]
           resources:
-            limits:
-              memory: 200Mi
             requests:
               cpu: 100m
               memory: 100Mi
+            limits:
+              cpu: 500m
+              memory: 200Mi
+          # `filebeat test output` exits non-zero when the configured Logstash
+          # output is unreachable, which is the health signal that matters for
+          # this collector.
+          readinessProbe:
+            exec:
+              command: ["filebeat", "test", "output", "-c", "/etc/filebeat.yml"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["filebeat", "test", "output", "-c", "/etc/filebeat.yml"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
           volumeMounts:
             - name: config
               mountPath: /etc/filebeat.yml

@@ -1,19 +1,46 @@
+# Namespace objects plus Pod Security Admission labels (Phase 3).
+#
+# `restricted` is enforced where every workload satisfies the restricted
+# profile. Where that is not yet true the namespace is labelled audit+warn so
+# violations are recorded and visible without blocking the demo; each case is
+# justified in docs/security/phase-3-kubernetes-security-reliability.md.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: elastiflix
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: elastic-stack
+  labels:
+    # Filebeat must read /var/log and /var/lib/docker/containers from the node
+    # as root, which the restricted profile forbids. Audit and warn only.
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: infra
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: monitoring
+  labels:
+    # kube-prometheus-stack (pinned 58.2.2) is installed by Argo CD from its
+    # upstream chart; its pod security posture is owned by that chart and is
+    # not verified here, so enforcement is deliberately left off.
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

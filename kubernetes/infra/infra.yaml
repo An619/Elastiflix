@@ -15,6 +15,13 @@ kind: Deployment
 metadata:
   name: redis
   namespace: infra
+  annotations:
+    # See docs/security/phase-2-kubernetes-hardening.md for the rationale shared
+    # by these three exceptions.
+    checkov.io/skip1: CKV_K8S_43=upstream image tag is reviewed but digest pinning needs registry access from CI
+    checkov.io/skip2: CKV_K8S_15=static reviewed upstream tag; floating tags are not used for the application images
+    checkov.io/skip3: CKV_K8S_40=upstream image hard-codes its unprivileged runtime uid 999
+    checkov.io/skip4: CKV_K8S_22=rabbitmq writes generated config and the Erlang cookie into /etc/rabbitmq at start-up
 spec:
   replicas: 1
   selector:
@@ -25,6 +32,15 @@ spec:
       labels:
         app: redis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # redis:7-alpine runs as the unprivileged `redis` user (uid/gid 999).
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           image: redis:7-alpine
@@ -32,22 +48,22 @@ spec:
           # redis-server command expands $(REDIS_PASSWORD). envFrom would
           # export `redis-password` verbatim and the password would stay
           # the literal string "$(REDIS_PASSWORD)".
-          env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: redis-secret
-                  key: redis-password
           command:
-            [
-              "redis-server",
-              "--requirepass",
-              "$(REDIS_PASSWORD)",
-              "--appendonly",
-              "yes",
-            ]
+            - sh
+            - -c
+            # The password is read from a mounted Secret file, never from an
+            # environment variable or an argv, and rendered into a 0600 config
+            # file that is discarded with the pod.
+            - |
+              set -eu
+              umask 077
+              password=$(cat /run/secrets/redis/redis-password)
+              [ -n "$password" ] || { echo "redis password is empty" >&2; exit 1; }
+              printf 'requirepass %s\n' "$password" > /tmp/redis.conf
+              exec redis-server /tmp/redis.conf --appendonly yes
           ports:
             - containerPort: 6379
+              name: redis
           resources:
             requests:
               cpu: "100m"
@@ -55,13 +71,45 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "250m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
           volumeMounts:
             - name: redis-data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            - name: redis-secret
+              mountPath: /run/secrets/redis
+              readOnly: true
       volumes:
         - name: redis-data
           persistentVolumeClaim:
             claimName: redis-pvc
+        - name: tmp
+          emptyDir: {}
+        - name: redis-secret
+          secret:
+            secretName: redis-secret
+            items:
+              - key: redis-password
+                path: redis-password
 ---
 apiVersion: v1
 kind: Service
@@ -73,7 +121,8 @@ spec:
     app: redis
   ports:
     - port: 6379
-      targetPort: 6379
+      targetPort: redis
+      name: redis
 
 
 # --- RABBITMQ ---
@@ -94,6 +143,11 @@ kind: Deployment
 metadata:
   name: rabbitmq
   namespace: infra
+  annotations:
+    checkov.io/skip1: CKV_K8S_43=upstream image tag is reviewed but digest pinning needs registry access from CI
+    checkov.io/skip2: CKV_K8S_15=static reviewed upstream tag; floating tags are not used for the application images
+    checkov.io/skip3: CKV_K8S_40=upstream image hard-codes its unprivileged runtime uid 999
+    checkov.io/skip4: CKV_K8S_22=rabbitmq writes generated config and the Erlang cookie into /etc/rabbitmq at start-up
 spec:
   replicas: 1
   selector:
@@ -104,6 +158,15 @@ spec:
       labels:
         app: rabbitmq
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # The rabbitmq image ships uid/gid 999 for the `rabbitmq` user.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rabbitmq
           image: rabbitmq:3-management-alpine
@@ -112,11 +175,11 @@ spec:
           env:
             - name: RABBITMQ_DEFAULT_USER
               value: "user"
-            - name: RABBITMQ_DEFAULT_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: rabbitmq-secret
-                  key: rabbitmq-password
+            # The official image reads the trailing _FILE variant and exports
+            # RABBITMQ_DEFAULT_PASS itself, so the password never appears in
+            # the pod spec, environment dump, or argv.
+            - name: RABBITMQ_DEFAULT_PASS_FILE
+              value: /run/secrets/rabbitmq/rabbitmq-password
           ports:
             - containerPort: 5672
               name: amqp
@@ -129,13 +192,50 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            # Deliberately not read-only: RabbitMQ writes generated config and
+            # the Erlang cookie into /etc/rabbitmq at start-up. Restricted PSA
+            # does not require a read-only root filesystem, so this does not
+            # weaken the enforced pod security profile.
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 3
           volumeMounts:
             - name: rabbitmq-data
               mountPath: /var/lib/rabbitmq
+            - name: tmp
+              mountPath: /tmp
+            - name: rabbitmq-secret
+              mountPath: /run/secrets/rabbitmq
+              readOnly: true
       volumes:
         - name: rabbitmq-data
           persistentVolumeClaim:
             claimName: rabbitmq-pvc
+        - name: tmp
+          emptyDir: {}
+        - name: rabbitmq-secret
+          secret:
+            secretName: rabbitmq-secret
+            items:
+              - key: rabbitmq-password
+                path: rabbitmq-password
 ---
 apiVersion: v1
 kind: Service
@@ -148,5 +248,7 @@ spec:
   ports:
     - port: 5672
       name: amqp
+      targetPort: amqp
     - port: 15672
       name: management
+      targetPort: management

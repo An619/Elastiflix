@@ -111,11 +111,25 @@ fi
 
 if [[ "$args" == *"get application"* ]]; then
   case "$args" in
-    *".spec.syncPolicy.automated"*) echo ""; exit 0 ;;
+    # Empty = automated sync disabled, which is what bootstrap.sh step 9 does.
+    # FAKE_AUTOSYNC=on simulates the post-bootstrap state where it is re-enabled.
+    *".spec.syncPolicy.automated"*)
+      [ "${FAKE_AUTOSYNC:-}" = "on" ] && echo "{}" || echo ""
+      exit 0 ;;
+    # OutOfSync but Healthy. FAKE_DRIFT_APP limits it to one Application: real
+    # bootstrap drift is only `elastiflix`, because step 9 overrides only that
+    # one. Drifting all five would be five separate faults, not one.
     *".status.sync.status"*)
-      if [ "$mode" = "broken" ]; then echo "OutOfSync"; else echo "Synced"; fi; exit 0 ;;
+      if [ "${FAKE_MODE:-healthy}" = "drift" ]; then
+        if [ -z "${FAKE_DRIFT_APP:-}" ] || [[ "$args" == *"$FAKE_DRIFT_APP"* ]]; then
+          echo "OutOfSync"
+        else
+          echo "Synced"
+        fi
+      elif [ "$mode" = "broken" ]; then echo "OutOfSync"; else echo "Synced"; fi; exit 0 ;;
     *".status.health.status"*)
-      if [ "$mode" = "broken" ]; then echo "Progressing"; else echo "Healthy"; fi; exit 0 ;;
+      if [ "${FAKE_MODE:-healthy}" = "drift" ]; then echo "Healthy"
+      elif [ "$mode" = "broken" ]; then echo "Progressing"; else echo "Healthy"; fi; exit 0 ;;
   esac
   echo "Synced"; exit 0
 fi
@@ -198,6 +212,38 @@ class VerifyDeploymentTests(unittest.TestCase):
     def test_json_mode_keeps_exit_code(self):
         self.assertEqual(self.run_script("broken", "--json").returncode, 1)
         self.assertEqual(self.run_script("healthy", "--json").returncode, 0)
+
+    # --- Argo CD state: bootstrap's manual-sync override is not a fault -----
+
+    def test_local_manual_sync_override_is_a_skip_not_a_failure(self):
+        """bootstrap.sh disables auto-sync, leaving elastiflix OutOfSync.
+
+        That is the documented local-image state, so reporting FAIL would fail
+        a bootstrap that worked. It must be SKIP, and the evidence must say why.
+        """
+        # drift mode = OutOfSync + Healthy; leaving FAKE_AUTOSYNC unset means
+        # automated sync is off, which is the state bootstrap.sh leaves behind.
+        env = dict(self.env, FAKE_MODE="drift", FAKE_DRIFT_APP="elastiflix")
+        result = subprocess.run(
+            ["bash", str(SCRIPT)], capture_output=True, text=True, env=env, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("bootstrap.sh disabled auto-sync", result.stdout)
+        self.assertIn("SKIP", result.stdout)
+        self.assertNotIn("FAIL", result.stdout)
+
+    def test_real_drift_with_autosync_enabled_is_still_a_failure(self):
+        """The guard this change must not weaken: OutOfSync + Healthy + autosync.
+
+        Same sync value as the local override, but here automated sync is on, so
+        it is genuine drift and has to fail.
+        """
+        env = dict(self.env, FAKE_MODE="drift", FAKE_DRIFT_APP="elastiflix", FAKE_AUTOSYNC="on")
+        result = subprocess.run(
+            ["bash", str(SCRIPT)], capture_output=True, text=True, env=env, timeout=120
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("OutOfSync/Healthy", result.stdout)
 
     def test_quick_skips_the_slow_index_checks(self):
         out = self.run_script("healthy", "--quick").stdout

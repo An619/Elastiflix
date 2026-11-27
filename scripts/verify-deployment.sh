@@ -321,22 +321,33 @@ esac
 # ---------------------------------------------------------------------------
 section "9. GitOps state"
 # ---------------------------------------------------------------------------
+# bootstrap.sh step 9 deliberately turns off automated sync for the elastiflix
+# Application so selfHeal cannot revert the locally built image tag. The
+# consequence is that Argo CD reports it OutOfSync until the override is
+# removed, so demanding Synced here would fail a bootstrap that worked
+# perfectly. Read the sync policy first and judge that one Application on
+# health alone when it is in the documented local-override state.
+auto=$(kubectl -n "$NS_ARGOCD" get application elastiflix -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null)
+
 for app in elastiflix infra-databases elastic-stack monitoring namespaces; do
   # Two separate jsonpath calls on purpose: one get with both paths would need
   # a template, and a template that silently yields an empty string is exactly
   # how a FAIL used to look like a PASS here.
   sync=$(kubectl -n "$NS_ARGOCD" get application "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null)
   health=$(kubectl -n "$NS_ARGOCD" get application "$app" -o jsonpath='{.status.health.status}' 2>/dev/null)
-  if [ "$sync" = "Synced" ] && [ "$health" = "Healthy" ]; then
-    record PASS "Argo CD ${app} Synced/Healthy" ""
-  elif [ -z "$sync" ]; then
+  if [ -z "$sync" ]; then
     record FAIL "Argo CD ${app}" "application not found"
+  elif [ "$sync" = "Synced" ] && [ "$health" = "Healthy" ]; then
+    record PASS "Argo CD ${app} Synced/Healthy" ""
+  elif [ "$app" = "elastiflix" ] && [ -z "$auto" ] && [ "$health" = "Healthy" ]; then
+    # Expected, not a fault: manual sync with a local image override.
+    record SKIP "Argo CD elastiflix Synced/Healthy" \
+      "${sync}/Healthy is expected - bootstrap.sh disabled auto-sync for the local image tag"
   else
     record FAIL "Argo CD ${app}" "${sync:-?}/${health:-?}"
   fi
 done
 
-auto=$(kubectl -n "$NS_ARGOCD" get application elastiflix -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null)
 if [ -z "$auto" ]; then
   record SKIP "elastiflix Application auto-sync" "disabled by bootstrap.sh (local image tag); re-enable before testing GitOps"
 else

@@ -36,11 +36,18 @@ jobs:
                   npm run test:coverage
             - name: Generate Python Coverage
               run: |
-                  cd data-loader
                   python3 -m pip install --upgrade pip # NOSONAR - CI-only tooling
-                  pip install coverage # NOSONAR - CI-only tooling
-                  coverage run --include="index-data.py" test_index_data.py
-                  coverage xml -o coverage-python.xml
+                  # coverage + the two imports the gate scripts need.
+                  pip install coverage PyYAML promql-parser # NOSONAR - CI-only tooling
+                  # The catalogue loader, measured from its own directory so the
+                  # hyphenated module name resolves.
+                  ( cd data-loader
+                    coverage run --include="index-data.py" test_index_data.py
+                    coverage xml -o coverage-python.xml )
+                  # The CI gate scripts. They decide whether the pipeline passes,
+                  # so their own branches are measured rather than assumed.
+                  coverage run --source=scripts -m unittest data-loader/test_validate_observability.py
+                  coverage xml -o scripts/coverage-scripts.xml
             - name: SonarCloud Scan
               uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
               env:

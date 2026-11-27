@@ -89,8 +89,20 @@ finding raised by this branch is either fixed or carries an in-code reason:
 | `npm ci` without `--ignore-scripts` in the audit job | Fixed: audits install with `--ignore-scripts` |
 | `[` instead of `[[` in `bootstrap.sh` | Fixed |
 | Clear-text URL in `bootstrap.sh` | Documented: the only such URL is the local `http://argocd.local` address printed for the operator |
-| Storage limit missing on a container volume (`backend` pod) | Fixed: every `emptyDir` on the application pods now has a `sizeLimit` |
+| Storage limit missing on a container (`backend` pod) | Fixed twice over: every `emptyDir` now has a `sizeLimit`, and both application containers declare an `ephemeral-storage` request/limit (64Mi/512Mi), which is what the rule actually measures |
 | Capability assignment (`filebeat`) | Documented: `DAC_READ_SEARCH` is required to read root-owned node logs; all other capabilities are dropped and the pod runs under a dedicated ServiceAccount |
+
+## Coverage of the CI gate scripts
+
+`sonar-project.properties` previously declared `sonar.coverage.exclusions` as
+`**/node_modules/**,**/build/**` followed by a *space*, which makes Sonar treat
+` **/build/**` as a separate, non-matching entry - so the exclusion list was
+effectively one glob deep. It also analysed `scripts/` without ever reporting
+coverage for it, which is how two 0%-covered scripts dragged the new-code
+coverage gate down. Both are corrected: `scripts` is now a measured source
+directory, the Python coverage report is merged from two XML files, and the two
+gate scripts are unit-tested (33 tests, 93% statement coverage of
+`validate-observability.py`, ~95% of `check-checkov-report.py`).
 
 ## Verification performed
 

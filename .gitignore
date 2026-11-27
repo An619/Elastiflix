@@ -31,4 +31,6 @@ coverage/
 
 # Local Python coverage artifacts
 data-loader/coverage-python.xml
+scripts/coverage-scripts.xml
 .coverage
+.coverage.*

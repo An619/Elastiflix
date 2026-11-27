@@ -63,9 +63,13 @@ spec:
             requests:
               cpu: "100m"
               memory: "128Mi"
+              # The pod writes only to /tmp; this keeps the scheduler honest and
+              # evicts the pod before it can fill the node's disk.
+              ephemeral-storage: "64Mi"
             limits:
               cpu: "500m"
               memory: "512Mi"
+              ephemeral-storage: "512Mi"
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000

@@ -62,10 +62,6 @@ def validate_promql(expression: str, origin: str) -> None:
         raise ValueError(f"invalid PromQL in {origin}: {error}") from error
 
 
-def strip_alerts(expression: str) -> str:
-    return expression
-
-
 def main() -> int:
     files = sorted(KUBERNETES.rglob("*.yaml"))
     rules = 0

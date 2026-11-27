@@ -70,9 +70,12 @@ spec:
             requests:
               cpu: "100m"
               memory: "128Mi"
+              # nginx writes proxy buffers and caches to the two emptyDirs below.
+              ephemeral-storage: "64Mi"
             limits:
               cpu: "500m"
               memory: "512Mi"
+              ephemeral-storage: "512Mi"
           securityContext:
             runAsNonRoot: true
             runAsUser: 101

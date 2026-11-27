@@ -1,5 +1,13 @@
 name: SonarCloud SAST
-on: workflow_call
+on:
+    # A required secret must be declared here. Calling this workflow with
+    # `secrets: SONAR_TOKEN: ...` from devsecops.yml is a validation error unless
+    # the callee declares it, which fails the entire pipeline at start-up -
+    # before any job runs, so no gate would report at all.
+    workflow_call:
+        secrets:
+            SONAR_TOKEN:
+                required: true
 
 jobs:
     sonar:

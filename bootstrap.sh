@@ -154,3 +154,6 @@ echo ""
 echo "📚 Elasticsearch starts empty and Logstash indexes the catalogue in the"
 echo "   background; first search may return nothing for a few minutes."
 echo "   Watch it:  kubectl -n elastic-stack logs deploy/logstash -c prepare-data -f"
+echo ""
+# Rollout status only proves the pods started, not that the app answers queries.
+echo "🔎 Verify it end to end:  ./scripts/verify-deployment.sh"

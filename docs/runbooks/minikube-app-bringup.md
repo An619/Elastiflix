@@ -378,6 +378,32 @@ in this branch.
 
 ## 5. Prove the application actually works
 
+### 5.0 One command instead of all of the below
+
+```bash
+./scripts/verify-deployment.sh
+```
+
+43 checks across ten groups: cluster/tooling, workloads, catalogue ingestion, API behaviour,
+frontend proxy, ingress/DNS, metrics and SLO plumbing, live security controls, GitOps state, and a
+smoke test. Each line is `PASS`, `FAIL` or `SKIP` with the evidence that produced it.
+
+```
+Result: 40 passed, 0 failed, 3 skipped (of 43)
+Deployment is WORKING — 3 check(s) skipped, see above.
+```
+
+Exit code is `0` only when nothing failed, so it is usable in a pipeline. Flags:
+`--verbose` (show each command's output), `--json` (machine-readable; stdout is a single JSON
+document), `--quick` (skip the slow index checks).
+
+**`SKIP` is not a pass.** A skipped check could not be evaluated here — no `minikube tunnel`, for
+example — and the summary says how many were skipped so a "WORKING" verdict with 20 skips is
+visibly weaker than one with none.
+
+The sections below are the manual equivalent, kept because when a check fails you will want to run
+its command by hand and see the full output.
+
 ### 5.1 The backend answers directly
 
 ```bash

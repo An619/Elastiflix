@@ -29,6 +29,12 @@ jobs:
               run: /tmp/actionlint -color .github/workflows/*.yml
             - name: Validate shell script syntax
               run: bash -n bootstrap.sh start.sh scripts/*.sh
+            # The deployment verifier decides whether a cluster "works", and it
+            # would be worse than useless if it always said yes. Its tests drive
+            # it against a stubbed kubectl and assert both verdicts.
+            - name: Test the deployment verifier
+              run: |
+                  python3 -m unittest data-loader.test_verify_deployment -v
             - name: Test the Elasticsearch snapshot client against a mocked API
               run: bash scripts/test-elasticsearch-snapshot.sh
 

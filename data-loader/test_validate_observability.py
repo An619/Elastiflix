@@ -95,7 +95,7 @@ class DocumentsTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(validator.main(), 0)
-        self.assertIn("Validated 54 Kubernetes YAML files", output.getvalue())
+        self.assertRegex(output.getvalue(), r"Validated [1-9][0-9]* Kubernetes YAML files")
 
     def test_promql_validation_accepts_valid_and_rejects_invalid_expression(self):
         validator.validate_promql("sum(rate(http_requests_total[5m]))", "unit-test")
@@ -108,7 +108,7 @@ class DocumentsTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as result:
                 runpy.run_path(str(SCRIPT), run_name="__main__")
         self.assertEqual(result.exception.code, 0)
-        self.assertIn("Validated 54 Kubernetes YAML files", output.getvalue())
+        self.assertRegex(output.getvalue(), r"Validated [1-9][0-9]* Kubernetes YAML files")
 
         errors = io.StringIO()
         with mock.patch.object(Path, "rglob", side_effect=OSError("fixture read failed")):

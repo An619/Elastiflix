@@ -29,6 +29,8 @@ jobs:
               run: /tmp/actionlint -color .github/workflows/*.yml
             - name: Validate shell script syntax
               run: bash -n bootstrap.sh start.sh scripts/*.sh
+            - name: Test the Elasticsearch snapshot client against a mocked API
+              run: bash scripts/test-elasticsearch-snapshot.sh
 
             # --- Application tests ---
             - name: Test Frontend

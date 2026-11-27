@@ -57,7 +57,7 @@ SKIP_COUNT=0
 RESULTS=()   # "STATUS|name|evidence"
 
 # show <text>: only under --verbose, so the normal run stays readable.
-show() { [ "$VERBOSE" -eq 1 ] && printf '      %s\n' "$*"; return 0; }
+show() { [[ "$VERBOSE" -eq 1 ]] && printf '      %s\n' "$*"; return 0; }
 
 record() { # record <PASS|FAIL|SKIP> <name> <evidence>
   local status="$1" name="$2" evidence="${3:-}"
@@ -67,7 +67,7 @@ record() { # record <PASS|FAIL|SKIP> <name> <evidence>
     SKIP) SKIP_COUNT=$((SKIP_COUNT + 1)) ;;
   esac
   RESULTS+=("${status}|${name}|${evidence}")
-  if [ "$JSON" -eq 0 ]; then
+  if [[ "$JSON" -eq 0 ]]; then
     case "$status" in
       PASS) printf '  \033[32mPASS\033[0m  %-46s %s\n' "$name" "$evidence" ;;
       FAIL) printf '  \033[31mFAIL\033[0m  %-46s %s\n' "$name" "$evidence" ;;
@@ -76,7 +76,7 @@ record() { # record <PASS|FAIL|SKIP> <name> <evidence>
   fi
 }
 
-section() { [ "$JSON" -eq 0 ] && printf '\n\033[1m%s\033[0m\n' "$1"; return 0; }
+section() { [[ "$JSON" -eq 0 ]] && printf '\n\033[1m%s\033[0m\n' "$1"; return 0; }
 
 # check <name> <command...>: PASS when the command succeeds.
 check() {
@@ -84,14 +84,14 @@ check() {
   local out rc
   out=$("$@" 2>&1); rc=$?
   show "$out"
-  if [ $rc -eq 0 ]; then record PASS "$name" ""; else
+  if [[ $rc -eq 0 ]]; then record PASS "$name" ""; else
     record FAIL "$name" "$(printf '%s' "$out" | tail -1 | cut -c1-90)"; fi
 }
 
 # expect_eq <name> <expected> <actual>
 expect_eq() {
   local name="$1" want="$2" got="$3"
-  if [ "$want" = "$got" ]; then record PASS "$name" "$got"
+  if [[ "$want" = "$got" ]]; then record PASS "$name" "$got"
   else record FAIL "$name" "want '$want', got '$got'"; fi
 }
 
@@ -99,7 +99,7 @@ expect_eq() {
 expect_ge() {
   local name="$1" min="$2" got="$3"
   case "$got" in ''|*[!0-9]*) record FAIL "$name" "non-numeric: '$got'"; return;; esac
-  if [ "$got" -ge "$min" ]; then record PASS "$name" "$got"
+  if [[ "$got" -ge "$min" ]]; then record PASS "$name" "$got"
   else record FAIL "$name" "$got < $min"; fi
 }
 
@@ -113,7 +113,7 @@ pod_ready() {
 exec_in() {
   local ns="$1" sel="$2" cmd="$3" pod
   pod=$(kubectl -n "$ns" get pods -l "$sel" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-  [ -z "$pod" ] && { echo "no pod matching $sel"; return 1; }
+  [[ -z "$pod" ]] && { echo "no pod matching $sel"; return 1; }
   kubectl -n "$ns" exec "$pod" -- sh -c "$cmd" 2>&1
 }
 
@@ -121,7 +121,7 @@ exec_in() {
 # consumer needs a filter. Header goes to stderr instead.
 CONTEXT="$(kubectl config current-context 2>/dev/null || echo unknown)"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if [ "$JSON" -eq 1 ]; then
+if [[ "$JSON" -eq 1 ]]; then
   printf 'verifying on context %s at %s\n' "$CONTEXT" "$STAMP" >&2
 else
   echo "Elastiflix deployment verification"
@@ -173,7 +173,7 @@ case "$es_health" in
   *)            record FAIL "Elasticsearch cluster health" "$es_health" ;;
 esac
 
-if [ "$QUICK" -eq 1 ]; then
+if [[ "$QUICK" -eq 1 ]]; then
   record SKIP "catalogue document count" "--quick"
 else
   doc_count=$(es_get "/${ES_INDEX}/_count" | sed -n 's/.*"count":\([0-9]*\).*/\1/p')
@@ -194,7 +194,7 @@ search_json=$(exec_in "$NS_APP" app=backend \
   "wget -qO- --header='Content-Type: application/json' --post-data='{\"state\":{\"searchTerm\":\"matrix\",\"current\":1},\"queryConfig\":{\"resultsPerPage\":3}}' http://localhost:17700/api/search")
 
 total=$(printf '%s' "$search_json" | sed -n 's/.*"totalResults":\([0-9]*\).*/\1/p')
-if [ -z "$search_json" ]; then
+if [[ -z "$search_json" ]]; then
   record FAIL "POST /api/search returns results" "empty response"
 else
   expect_ge "POST /api/search returns results" 1 "${total:-0}"
@@ -202,7 +202,7 @@ else
   # lives at results[].title.raw, not title. Extracting the wrong path was a
   # real bug in the first version of this script.
   titles=$(printf '%s' "$search_json" | grep -o '"raw":"[^"]*"' | head -3 | cut -d'"' -f4 | paste -sd', ' -)
-  [ -n "$titles" ] && record PASS "search results contain titles" "${titles:0:70}" \
+  [[ -n "$titles" ]] && record PASS "search results contain titles" "${titles:0:70}" \
                    || record FAIL "search results contain titles" "no title field in response"
 fi
 
@@ -243,7 +243,7 @@ esac
 section "6. Ingress and DNS (only meaningful with minikube tunnel running)"
 # ---------------------------------------------------------------------------
 ingress_addr=$(kubectl -n "$NS_APP" get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-if [ -z "$ingress_addr" ]; then
+if [[ -z "$ingress_addr" ]]; then
   record SKIP "ingress has an address" "no IP yet - run 'minikube tunnel' in an admin shell"
 else
   record PASS "ingress has an address" "$ingress_addr"
@@ -272,18 +272,18 @@ prom_q() {
 prom_result=$(prom_q 'up%7Bjob%3D~%22.*backend.*%22%7D')
 if printf '%s' "$prom_result" | grep -q '"value":\[[^]]*"1"\]'; then
   record PASS "Prometheus scrapes the backend" "up == 1"
-elif [ -z "$prom_result" ]; then
+elif [[ -z "$prom_result" ]]; then
   record SKIP "Prometheus scrapes the backend" "Prometheus not reachable via API"
 else
   record FAIL "Prometheus scrapes the backend" "no up{job=~.*backend.*} == 1"
 fi
 
-if [ "$QUICK" -eq 1 ]; then
+if [[ "$QUICK" -eq 1 ]]; then
   record SKIP "SLO recording rule has data" "--quick"
 else
   slo=$(prom_q 'elastiflix%3Arequests%3Arate5m')
   val=$(printf '%s' "$slo" | sed -n 's/.*"value":\[[^,]*,*"\([0-9.e+-]*\)".*/\1/p')
-  if [ -n "$val" ] && awk -v v="$val" 'BEGIN{exit !(v>0)}'; then
+  if [[ -n "$val" ]] && awk -v v="$val" 'BEGIN{exit !(v>0)}'; then
     record PASS "SLO recording rule has data" "requests/5m = ${val}"
   else
     record FAIL "SLO recording rule has data" "no traffic recorded yet"
@@ -304,7 +304,7 @@ ef=$(exec_in "$NS_APP" app=backend 'touch /usr/local/bin/x 2>&1 | grep -c "Read-
 expect_ge "backend root filesystem is read-only" 1 "${ef:-0}"
 
 caps=$(exec_in "$NS_APP" app=backend 'grep "^CapEff:" /proc/self/status' | awk '{print $2}')
-if [ "$caps" = "0000000000000000" ]; then
+if [[ "$caps" = "0000000000000000" ]]; then
   record PASS "backend has no effective capabilities" "$caps"
 else
   record FAIL "backend has no effective capabilities" "${caps:-unknown}"
@@ -335,11 +335,11 @@ for app in elastiflix infra-databases elastic-stack monitoring namespaces; do
   # how a FAIL used to look like a PASS here.
   sync=$(kubectl -n "$NS_ARGOCD" get application "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null)
   health=$(kubectl -n "$NS_ARGOCD" get application "$app" -o jsonpath='{.status.health.status}' 2>/dev/null)
-  if [ -z "$sync" ]; then
+  if [[ -z "$sync" ]]; then
     record FAIL "Argo CD ${app}" "application not found"
-  elif [ "$sync" = "Synced" ] && [ "$health" = "Healthy" ]; then
+  elif [[ "$sync" = "Synced" ]] && [[ "$health" = "Healthy" ]]; then
     record PASS "Argo CD ${app} Synced/Healthy" ""
-  elif [ "$app" = "elastiflix" ] && [ -z "$auto" ] && [ "$health" = "Healthy" ]; then
+  elif [[ "$app" = "elastiflix" ]] && [[ -z "$auto" ]] && [[ "$health" = "Healthy" ]]; then
     # Expected, not a fault: manual sync with a local image override.
     record SKIP "Argo CD elastiflix Synced/Healthy" \
       "${sync}/Healthy is expected - bootstrap.sh disabled auto-sync for the local image tag"
@@ -348,7 +348,7 @@ for app in elastiflix infra-databases elastic-stack monitoring namespaces; do
   fi
 done
 
-if [ -z "$auto" ]; then
+if [[ -z "$auto" ]]; then
   record SKIP "elastiflix Application auto-sync" "disabled by bootstrap.sh (local image tag); re-enable before testing GitOps"
 else
   record PASS "elastiflix Application auto-sync" "enabled"
@@ -360,10 +360,10 @@ section "10. One-shot application smoke test"
 smoke=$(kubectl -n "$NS_APP" get pods -l app=frontend -o name 2>/dev/null | head -1)
 # Fall back to the Deployment's own selector if the label query comes back empty,
 # so a renamed label does not read as "no frontend pod".
-if [ -z "$smoke" ]; then
+if [[ -z "$smoke" ]]; then
   smoke=$(kubectl -n "$NS_APP" get pods --selector="$(kubectl -n "$NS_APP" get deployment frontend -o jsonpath='{.spec.selector.matchLabels.app}' 2>/dev/null)" -o name 2>/dev/null | head -1)
 fi
-if [ -n "$smoke" ]; then
+if [[ -n "$smoke" ]]; then
   body=$(kubectl -n "$NS_APP" exec "$smoke" -- wget -qO- http://localhost:8080/ 2>/dev/null | head -c 120)
   case "$body" in
     *html*|*HTML*) record PASS "frontend container serves the SPA" "" ;;
@@ -377,13 +377,13 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 TOTAL=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
-if [ "$JSON" -eq 1 ]; then
+if [[ "$JSON" -eq 1 ]]; then
   printf '{"passed":%d,"failed":%d,"skipped":%d,"total":%d,"checks":[' \
     "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT" "$TOTAL"
   first=1
   for r in "${RESULTS[@]}"; do
     IFS='|' read -r st nm ev <<<"$r"
-    [ $first -eq 0 ] && printf ','
+    [[ $first -eq 0 ]] && printf ','
     first=0
     printf '{"status":"%s","name":"%s","evidence":"%s"}' \
       "$st" "${nm//\"/\\\"}" "${ev//\"/\\\"}"
@@ -392,26 +392,26 @@ if [ "$JSON" -eq 1 ]; then
 else
   printf '\n\033[1mResult: %d passed, %d failed, %d skipped (of %d)\033[0m\n' \
     "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT" "$TOTAL"
-  if [ "$FAIL_COUNT" -eq 0 ]; then
-    if [ "$SKIP_COUNT" -gt 0 ]; then
+  if [[ "$FAIL_COUNT" -eq 0 ]]; then
+    if [[ "$SKIP_COUNT" -gt 0 ]]; then
       printf '\033[32mDeployment is WORKING\033[0m — %d check(s) skipped, see above.\n' "$SKIP_COUNT"
     else
       printf '\033[32mDeployment is WORKING — every check passed.\033[0m\n'
     fi
     # NOSONAR - a local Minikube host in printed guidance, not a transport
     # decision: there is no TLS on this cluster by design (see the runbook).
-    [ "$QUICK" -eq 0 ] && printf '\nTry it in a browser: http://elastiflix.local (needs `minikube tunnel`).\n' # NOSONAR
+    [[ "$QUICK" -eq 0 ]] && printf '\nTry it in a browser: http://elastiflix.local (needs `minikube tunnel`).\n' # NOSONAR
   else
     printf '\033[31mDeployment is NOT fully working.\033[0m\n'
     printf 'Failed checks and the runbook section that explains each:\n'
     for r in "${RESULTS[@]}"; do
       IFS='|' read -r st nm ev <<<"$r"
-      [ "$st" = "FAIL" ] && printf '  - %s (%s)\n' "$nm" "$ev"
+      [[ "$st" = "FAIL" ]] && printf '  - %s (%s)\n' "$nm" "$ev"
     done
     printf '\nSee docs/runbooks/minikube-app-bringup.md for the four known blockers\n'
     printf '(image tag, catalogue download, backend and frontend upstream).\n'
   fi
 fi
 
-[ "$FAIL_COUNT" -eq 0 ] || exit 1
+[[ "$FAIL_COUNT" -eq 0 ]] || exit 1
 exit 0

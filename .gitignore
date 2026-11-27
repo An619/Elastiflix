@@ -6,8 +6,17 @@ elk/data/movies.ndjson
 # Terraform
 terraform/.terraform/
 terraform/.terraform.lock.hcl
+
+# Operator-specific values (budget amounts, notification addresses, backend
+# bucket names). Examples are committed; real values are not.
+*.tfvars
+!*.tfvars.example
 terraform/*.tfstate
 terraform/*.tfstate.backup
+terraform/**/*.tfstate
+terraform/**/*.tfstate.backup
+terraform/**/*.tfplan
+terraform/finops/demo.tfvars
 *.pem
 kubeseal.exe
 my-public-key.pem
@@ -22,4 +31,6 @@ coverage/
 
 # Local Python coverage artifacts
 data-loader/coverage-python.xml
+scripts/coverage-scripts.xml
 .coverage
+.coverage.*

@@ -21,6 +21,9 @@ describe("Backend API", () => {
     assert.equal(res.status, 200);
     assert.match(res.text, /elastiflix_http_requests_total/);
     assert.match(res.text, /elastiflix_search_requests_total/);
+    assert.match(res.text, /elastiflix_http_responses_total/);
+    assert.match(res.text, /elastiflix_http_request_duration_seconds_bucket/);
+    assert.match(res.text, /^elastiflix_redis_up \d+$/m);
   });
 
   it("POST /api/search with empty body does not crash (no req.body)", async () => {
@@ -75,5 +78,47 @@ describe("Backend API", () => {
   it("GET /metrics reflects counted requests", async () => {
     const res = await request(app).get("/metrics");
     assert.match(res.text, /elastiflix_http_requests_total [1-9]/);
+  });
+
+  it("labels responses by bounded route and status class, never by raw path", async () => {
+    await request(app).get("/api/users/private-id?query=private-query");
+    await request(app).get("/private-page?query=private-query");
+    const res = await request(app).get("/metrics");
+    assert.match(res.text, /elastiflix_http_responses_total\{route="\/api\/other",status_class="4xx"\} \d+/);
+    assert.match(res.text, /elastiflix_http_responses_total\{route="\/other",status_class="4xx"\} \d+/);
+    assert.match(res.text, /elastiflix_http_request_duration_seconds_bucket\{route="\/api\/other",le="\+Inf"\} \d+/);
+    assert.doesNotMatch(res.text, /private-id|private-query|private-page/);
+  });
+
+  it("counts exactly one error per failed request (no double counting)", async () => {
+    const errorCount = async () => {
+      const res = await request(app).get("/metrics");
+      const match = res.text.match(/^elastiflix_errors_total (\d+)$/m);
+      assert.ok(match, "error counter should be exported");
+      return Number(match[1]);
+    };
+    const before = await errorCount();
+    const failed = await request(app)
+      .post("/api/search")
+      .set("Content-Type", "application/json")
+      .send({ state: { searchTerm: "slo-error-probe" }, queryConfig: {} });
+    assert.equal(failed.status, 500);
+    const after = await errorCount();
+    assert.equal(after, before + 1);
+  });
+
+  it("does not count /metrics scrapes as application requests", async () => {
+    const requestCount = async () => {
+      const res = await request(app).get("/metrics");
+      const match = res.text.match(/^elastiflix_http_requests_total (\d+)$/m);
+      assert.ok(match, "request counter should be exported");
+      return Number(match[1]);
+    };
+    const before = await requestCount();
+    await request(app).get("/metrics");
+    await request(app).get("/healthz");
+    const after = await requestCount();
+    // The health probe counts; the two scrapes must not.
+    assert.equal(after, before + 1);
   });
 });

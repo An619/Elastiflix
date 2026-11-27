@@ -1,3 +1,5 @@
+# Stable Service. Argo Rollouts repoints the selector at the stable ReplicaSet
+# during a canary, so this object must exist before the Rollout is created.
 apiVersion: v1
 kind: Service
 metadata:
@@ -7,5 +9,21 @@ spec:
   selector:
     app: frontend
   ports:
-    - port: 80
-      targetPort: 8080
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Canary Service. Receives only the percentage of traffic the Rollout assigns to
+# the new ReplicaSet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-canary
+  namespace: elastiflix
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

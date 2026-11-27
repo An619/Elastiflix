@@ -1,5 +1,13 @@
 name: SonarCloud SAST
-on: workflow_call
+on:
+    # A required secret must be declared here. Calling this workflow with
+    # `secrets: SONAR_TOKEN: ...` from devsecops.yml is a validation error unless
+    # the callee declares it, which fails the entire pipeline at start-up -
+    # before any job runs, so no gate would report at all.
+    workflow_call:
+        secrets:
+            SONAR_TOKEN:
+                required: true
 
 jobs:
     sonar:
@@ -19,22 +27,38 @@ jobs:
             - name: Generate Frontend Coverage
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  npm ci --ignore-scripts --legacy-peer-deps # NOSONAR - reproducible install from lockfile; lifecycle scripts disabled
                   CI=true npm test -- --watchAll=false --coverage --collectCoverageFrom="src/**/*.{js,jsx}"
             - name: Generate Backend Coverage
               run: |
                   cd backend
-                  npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  npm ci --ignore-scripts # NOSONAR - reproducible install from lockfile; lifecycle scripts disabled
                   npm run test:coverage
             - name: Generate Python Coverage
               run: |
-                  cd data-loader
                   python3 -m pip install --upgrade pip # NOSONAR - CI-only tooling
-                  pip install coverage # NOSONAR - CI-only tooling
-                  coverage run --include="index-data.py" test_index_data.py
-                  coverage xml -o coverage-python.xml
+                  # coverage + the two imports the gate scripts need.
+                  pip install coverage PyYAML promql-parser # NOSONAR - CI-only tooling
+                  # The catalogue loader, measured from its own directory so the
+                  # hyphenated module name resolves.
+                  ( cd data-loader
+                    coverage run --include="index-data.py" test_index_data.py
+                    coverage xml -o coverage-python.xml )
+                  # The CI gate scripts. They decide whether the pipeline passes,
+                  # so their own branches are measured rather than assumed.
+                  coverage run --source=scripts -m unittest data-loader/test_validate_observability.py
+                  coverage xml -o scripts/coverage-scripts.xml
             - name: SonarCloud Scan
               uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+            # Without this the scan uploads and the job passes regardless of the
+            # verdict: the gate showed ERROR while GitHub Actions was green, so a
+            # failing gate blocked nothing. The action polls the report-task the
+            # scanner wrote above and exits non-zero if the gate is not PASSED.
+            - name: Enforce the SonarCloud quality gate
+              uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
+              timeout-minutes: 10
+              env:
                   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

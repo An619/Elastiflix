@@ -7,6 +7,7 @@ import RerankConnector from "./RerankConnector.js";
 import SemanticConnector from "./SemanticConnector.js";
 import HybridConnector from "./HybridConnector.js";
 import { log, logged } from "./logger.js";
+import { secretValue } from "./secretValue.js";
 
 import { createClient } from "redis";
 import amqp from "amqplib";
@@ -27,23 +28,23 @@ if (process.env.LOCAL) {
 }
 app.use(express.json());
 
-// --- URL helpers: allow password-only envs (K8s Secrets) ---
-function redisUrl() {
+// --- URL helpers: passwords come from mounted Secret files, not env vars ---
+function redisUrl(readSecretFile) {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
   const host = process.env.REDIS_HOST;
   if (!host) return undefined;
   const port = process.env.REDIS_PORT || "6379";
-  const pass = process.env.REDIS_PASSWORD;
+  const pass = secretValue("REDIS_PASSWORD", readSecretFile);
   return pass ? `redis://:${encodeURIComponent(pass)}@${host}:${port}` : `redis://${host}:${port}`;
 }
 
-function rabbitmqUrl() {
+function rabbitmqUrl(readSecretFile) {
   if (process.env.RABBITMQ_URL) return process.env.RABBITMQ_URL;
   const host = process.env.RABBITMQ_HOST;
   if (!host) return undefined;
   const port = process.env.RABBITMQ_PORT || "5672";
   const user = process.env.RABBITMQ_USER || "user";
-  const pass = process.env.RABBITMQ_PASSWORD;
+  const pass = secretValue("RABBITMQ_PASSWORD", readSecretFile);
   return pass
     ? `amqp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`
     : `amqp://${encodeURIComponent(user)}@${host}:${port}`;
@@ -107,31 +108,122 @@ async function connectRabbitMQ() {
 await connectRabbitMQ();
 
 // --- METRICS (Prometheus text format, no dependency) ---
-const metrics = { requestsTotal: 0, searchRequests: 0, cacheHits: 0, errors: 0 };
+// Label cardinality is bounded on purpose: route labels come from a fixed
+// allowlist and everything else collapses to /api/other or /other. Raw paths,
+// query strings, and user input never become label values.
+const metrics = { requestsTotal: 0, searchRequests: 0, cacheHits: 0, errors: 0, redisUp: 0 };
+const KNOWN_ROUTES = new Set([
+  "/",
+  "/healthz",
+  "/api/search",
+  "/api/rerank/search",
+  "/api/semantic/search",
+  "/api/hybrid/search",
+  "/api/autocomplete",
+]);
+const DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+const responseCounts = new Map(); // "route|statusClass" -> count
+const requestDurations = new Map(); // route -> { count, sum, buckets[] }
+
+function metricsRoute(path) {
+  if (KNOWN_ROUTES.has(path)) return path;
+  return path.startsWith("/api/") ? "/api/other" : "/other";
+}
+
+function escapeLabel(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll('"', '\\"');
+}
+
 app.use((req, res, next) => {
+  // Scrapes must not inflate application counters or feed back into the rate
+  // calculations used by the SLO rules.
+  if (req.path === "/metrics") return next();
   metrics.requestsTotal += 1;
   if (req.path.startsWith("/api/")) metrics.searchRequests += 1;
+
+  const route = metricsRoute(req.path);
+  const startedAt = process.hrtime.bigint();
+  res.once("finish", () => {
+    const statusClass = `${Math.floor(res.statusCode / 100)}xx`;
+    const key = `${route}|${statusClass}`;
+    responseCounts.set(key, (responseCounts.get(key) ?? 0) + 1);
+    if (res.statusCode >= 500) metrics.errors += 1;
+
+    const seconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+    const duration = requestDurations.get(route) ?? {
+      count: 0,
+      sum: 0,
+      buckets: new Array(DURATION_BUCKETS.length).fill(0),
+    };
+    duration.count += 1;
+    duration.sum += seconds;
+    DURATION_BUCKETS.forEach((bucket, index) => {
+      if (seconds <= bucket) duration.buckets[index] += 1;
+    });
+    requestDurations.set(route, duration);
+  });
   next();
 });
-app.get("/metrics", (req, res) => {
+
+function renderMetrics() {
+  const lines = [
+    "# HELP elastiflix_redis_up Whether the Redis server answered this scrape's INFO request (0 when Redis is unconfigured or unreachable)",
+    "# TYPE elastiflix_redis_up gauge",
+    `elastiflix_redis_up ${metrics.redisUp}`,
+    "# HELP elastiflix_http_requests_total Total HTTP requests, excluding /metrics scrapes",
+    "# TYPE elastiflix_http_requests_total counter",
+    `elastiflix_http_requests_total ${metrics.requestsTotal}`,
+    "# HELP elastiflix_search_requests_total Total search API requests",
+    "# TYPE elastiflix_search_requests_total counter",
+    `elastiflix_search_requests_total ${metrics.searchRequests}`,
+    "# HELP elastiflix_cache_hits_total Cache hits",
+    "# TYPE elastiflix_cache_hits_total counter",
+    `elastiflix_cache_hits_total ${metrics.cacheHits}`,
+    "# HELP elastiflix_errors_total Total HTTP responses with a 5xx status",
+    "# TYPE elastiflix_errors_total counter",
+    `elastiflix_errors_total ${metrics.errors}`,
+    "# HELP elastiflix_http_responses_total HTTP responses by bounded route and status class",
+    "# TYPE elastiflix_http_responses_total counter",
+    ...[...responseCounts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, count]) => {
+        const [route, statusClass] = key.split("|");
+        return `elastiflix_http_responses_total{route="${escapeLabel(route)}",status_class="${statusClass}"} ${count}`;
+      }),
+    "# HELP elastiflix_http_request_duration_seconds HTTP response duration in seconds",
+    "# TYPE elastiflix_http_request_duration_seconds histogram",
+    ...[...requestDurations.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .flatMap(([route, duration]) => [
+        ...DURATION_BUCKETS.map(
+          (bucket, index) =>
+            `elastiflix_http_request_duration_seconds_bucket{route="${escapeLabel(route)}",le="${bucket}"} ${duration.buckets[index]}`
+        ),
+        `elastiflix_http_request_duration_seconds_bucket{route="${escapeLabel(route)}",le="+Inf"} ${duration.count}`,
+        `elastiflix_http_request_duration_seconds_sum{route="${escapeLabel(route)}"} ${duration.sum}`,
+        `elastiflix_http_request_duration_seconds_count{route="${escapeLabel(route)}"} ${duration.count}`,
+      ]),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+app.get("/metrics", async (req, res) => {
+  // Redis reachability is probed at scrape time so a dead cache is visible as
+  // a gauge rather than as an absence of series. Any failure is reported as 0
+  // and must never break the scrape.
+  if (redisClient && typeof redisClient.info === "function") {
+    try {
+      await redisClient.info();
+      metrics.redisUp = 1;
+    } catch {
+      metrics.redisUp = 0;
+    }
+  } else {
+    metrics.redisUp = 0;
+  }
   res.set("Content-Type", "text/plain; version=0.0.4");
-  res.send(
-    [
-      "# HELP elastiflix_http_requests_total Total HTTP requests",
-      "# TYPE elastiflix_http_requests_total counter",
-      `elastiflix_http_requests_total ${metrics.requestsTotal}`,
-      "# HELP elastiflix_search_requests_total Total search API requests",
-      "# TYPE elastiflix_search_requests_total counter",
-      `elastiflix_search_requests_total ${metrics.searchRequests}`,
-      "# HELP elastiflix_cache_hits_total Cache hits",
-      "# TYPE elastiflix_cache_hits_total counter",
-      `elastiflix_cache_hits_total ${metrics.cacheHits}`,
-      "# HELP elastiflix_errors_total Total errors",
-      "# TYPE elastiflix_errors_total counter",
-      `elastiflix_errors_total ${metrics.errors}`,
-      "",
-    ].join("\n")
-  );
+  res.send(renderMetrics());
 });
 
 // --- CACHING WRAPPER ---
@@ -139,6 +231,7 @@ app.get("/metrics", (req, res) => {
 // resultsPerPage, queryConfig) — keying on searchTerm alone returns
 // page-1/unfiltered results for every later request.
 const cachedSearch = async (req, res, next) => {
+  const served = Date.now();
   const { state = {}, queryConfig = {} } = req.body ?? {};
   const { searchTerm } = state;
   if (!searchTerm) return next();
@@ -156,7 +249,10 @@ const cachedSearch = async (req, res, next) => {
           method: req.method,
           path: req.path,
           status: 200,
-          duration_ms: 0,
+          // Time actually spent serving this request, including the Redis
+          // round trip. This used to be hard-coded 0, which made the latency
+          // panel report the cache hit rate rather than search speed.
+          duration_ms: Date.now() - served,
           search_type: "lexical",
           query: searchTerm,
           results: body?.totalResults ?? body?.results?.length ?? 0,
@@ -201,7 +297,8 @@ app.post("/api/autocomplete", async (req, res) => {
   try {
     res.json(await SearchConnector.onAutocomplete(state, queryConfig));
   } catch (err) {
-    metrics.errors += 1;
+    // The response middleware counts the resulting 5xx once; incrementing here
+    // as well would double-count the same failed request.
     log.error({ event: "autocomplete_failed", error: err?.message ?? String(err) });
     res.status(500).json({ error: "autocomplete_failed" });
   }

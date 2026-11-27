@@ -56,15 +56,15 @@ Open **GitHub Actions** and walk left → right:
 3. `dependency-checks` — prod-only `npm audit --omit=dev --audit-level=high`, pip-audit.
 4. `code-quality` — Hadolint on all four Dockerfiles.
 5. `sonar-qube` — SonarCloud Quality Gate: **≥ 80% coverage on new code, 0 blocking issues** — demonstrate it by opening the PR quality gate (PR #1 history shows it going from 47.7% → 83.0% coverage and C → A security rating).
-6. `docker-checks` — Trivy (CRITICAL/HIGH fails) + Checkov (Terraform hard gate; k8s report-only while manifest hardening is pending).
-7. `docker-push` (main only) — builds both images, pushes `an619/elastiflix-*:<sha>`, commits the tag bump back to `main` with `[skip ci]`.
+6. `docker-checks` — Trivy (CRITICAL/HIGH fails) + Checkov (Terraform **and** Kubernetes hard gates; each Kubernetes suppression is an annotation with a written reason, enforced by `scripts/check-checkov-report.py`).
+7. `docker-push` (main only) — builds both images, pushes `an619/elastiflix-*:<sha>` with SBOM + provenance, signs them with cosign (keyless) and verifies the signature. It has **no write access to the repository**: the digest it reports is what a reviewer promotes in a GitOps commit.
 
 **Say:** "Every third-party action is pinned to a commit SHA — a compromised tag can't reach the pipeline."
 
 ## 5. GitOps & the cluster (2 min) — "how it actually gets to prod"
 
-1. `kubernetes/application/frontend/deployment.yaml` → **Argo Rollouts canary**: 20% → 30s pause → 100%. "A bad frontend never sees more than 20% of users; rollback is `kubectl argo rollouts undo`."
-2. `argocd-*.yaml` — **app-of-apps**: app, infra (Redis/RabbitMQ), ELK, ingress, monitoring. Argo CD watches HEAD of `main`, automated prune + self-heal.
+1. `kubernetes/application/frontend/deployment.yaml` → **Argo Rollouts canary**: 10% → 25% → 50% → 100%, gated by `frontend-canary-health` AnalysisRuns over request volume and 5xx ratio. "A failing canary aborts itself and traffic returns to the stable Service; manual abort is `kubectl argo rollouts abort frontend -n elastiflix`." Be honest that the split is the Rollouts basic canary (proportional ReplicaSets) and the analysis is service-level, not per-canary.
+2. `kubernetes/argocd-*.yaml` — one Application per concern (namespaces, application, infra, elastic-stack, monitoring), all inside the `elastiflix` **AppProject** so a mistaken Application cannot deploy into `kube-system`. They track `main`, with automated prune + self-heal, an ownership finalizer, and `namespaces` deliberately non-pruning.
 3. Secrets: `kubernetes/infra/*-sealedsecret.yaml` — encrypted at rest in git; only the in-cluster sealed-secrets controller can open them. On EKS the backend secret comes from **AWS Secrets Manager via ESO + IRSA** — no static AWS keys anywhere.
 4. Images run **non-root**, `drop: [ALL]`, `allowPrivilegeEscalation: false`.
 
@@ -100,14 +100,14 @@ A single node can't allocate a replica on the same node, so the primary shard is
 **How would you roll back a bad deploy?**
 Frontend: `kubectl argo rollouts undo rollout/frontend -n elastiflix` (or `abort`). Backend: `kubectl rollout undo deploy/backend -n elastiflix`. GitOps-wise: revert the commit that bumped the tag — Argo CD reconciles everything back automatically.
 
-**Why is k8s Checkov report-only but Terraform hard-fail?**
-Terraform findings were fixed and can be enforced at zero known-false-positive cost. The k8s manifests still carry ~105 accepted findings (digest pinning, seccomp, root beats images) that need a registry + cluster to remediate and verify — tracked as tech debt, not silently ignored.
+**Why is there still a `checkov.io/skip` list?**
+Both Checkov frameworks are hard gates. The Kubernetes scan reports **0 unsuppressed findings**; 30 suppressions remain, each an annotation on the workload it applies to with a written reason (digest pinning needs registry access; Filebeat needs root and hostPath to read node logs; upstream images hard-code their non-root UIDs). `scripts/check-checkov-report.py` fails the build if a finding appears without one, or if a suppression has no reason. Nothing is silently ignored.
 
 **How would this scale?**
 ES: dedicated master/data nodes, shard count tuned to the index budget. Backend: HPA on CPU + RPS (metrics already exposed). Frontend is static behind nginx — trivially horizontal. Redis: add a replica + Sentinel. RabbitMQ: quorum queues at higher throughput.
 
 **What would you improve next?**
-OPA/Gatekeeper policies in-cluster, digest-pinned base images, signed images (cosign) + admission verification, k6 load tests in CI, and promoting the frontend Rollout to analysis-based canary (metric-driven abort).
+OPA/Gatekeeper policies in-cluster, digest-pinned references in the manifests (the digest is already published and reported), cosign signature verification at admission, per-canary metric labels so the analysis attributes failures to a release, k6 load tests in CI, and an approved Alertmanager destination so alerts actually notify someone.
 
 ## Exit one-liner
 

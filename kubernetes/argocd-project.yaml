@@ -1,0 +1,81 @@
+# Argo CD project boundary for every Application in this repository.
+#
+# Without an AppProject, Applications run in `default`, which allows any
+# repository and any destination. This project limits both, so a compromised or
+# mistaken Application cannot deploy arbitrary manifests into kube-system.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: elastiflix
+  namespace: argocd
+spec:
+  description: Elastiflix workloads, dependency charts and the approved monitoring chart
+  sourceRepos:
+    - https://github.com/An619/Elastiflix.git
+    - https://prometheus-community.github.io/helm-charts
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: elastiflix
+    - server: https://kubernetes.default.svc
+      namespace: infra
+    - server: https://kubernetes.default.svc
+      namespace: elastic-stack
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+  # Cluster-scoped kinds this repository legitimately manages.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: networking.k8s.io
+      kind: IngressClass
+  # Everything else must be namespaced.
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  orphanedResources:
+    warn: true
+---
+# Argo CD does not know how to assess an Argo Rollouts object out of the box, so
+# without this a Rollout reports "Progressing" forever and a sync never turns
+# green - which makes automated sync unusable for the frontend.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+data:
+  resource.customizations.health.argoproj.io_Rollout: |
+    local health = { status = "Progressing", message = "Waiting for Rollout status" }
+    if obj.status ~= nil and obj.status.phase ~= nil then
+      if obj.status.phase == "Healthy" then
+        health.status = "Healthy"
+        health.message = "Rollout is healthy"
+      elseif obj.status.phase == "Degraded" then
+        health.status = "Degraded"
+        health.message = obj.status.message or "Rollout is degraded"
+      elseif obj.status.phase == "Paused" then
+        health.status = "Progressing"
+        health.message = "Rollout is paused for analysis or operator approval"
+      else
+        health.status = "Progressing"
+        health.message = obj.status.message or "Rollout is progressing"
+      end
+    end
+    return health
+  resource.customizations.actions.argoproj.io_Rollout: |
+    mergePatch: false
+    actions:
+      - name: resume
+        action.lua: |
+          return hs.resume(obj)
+      - name: abort
+        action.lua: |
+          return hs.abort(obj)

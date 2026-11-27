@@ -1,4 +1,5 @@
 name: Code Tests
+
 on: workflow_call
 
 jobs:
@@ -14,10 +15,41 @@ jobs:
                   cache-dependency-path: |
                       frontend/package-lock.json
                       backend/package-lock.json
+
+            # --- Repository-integrity checks that are cheap and catch the
+            # --- mistakes that otherwise fail later, noisily.
+            - name: Install actionlint
+              run: |
+                  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+                    -o /tmp/actionlint.tar.gz \
+                    https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+                  echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check
+                  tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+            - name: Lint GitHub Actions workflows
+              run: /tmp/actionlint -color .github/workflows/*.yml
+            - name: Validate shell script syntax
+              run: bash -n bootstrap.sh start.sh scripts/*.sh
+            # The deployment verifier decides whether a cluster "works", and it
+            # would be worse than useless if it always said yes. Its tests drive
+            # it against a stubbed kubectl and assert both verdicts.
+            - name: Test the deployment verifier
+              run: |
+                  python3 -m unittest data-loader.test_verify_deployment -v
+            - name: Test the Elasticsearch snapshot client against a mocked API
+              run: bash scripts/test-elasticsearch-snapshot.sh
+
+            # --- Application tests ---
             - name: Test Frontend
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps
+                  # --ignore-scripts: the four packages here that define install
+                  # scripts (core-js, core-js-pure, @parcel/watcher, fsevents) only
+                  # print funding/sponsorship output; none of them compile or
+                  # download anything the build needs. Verified: tests and
+                  # `react-scripts build` both pass with the flag. Without it an
+                  # install script is arbitrary code from the dependency tree
+                  # running on the runner with the workflow's token.
+                  npm ci --ignore-scripts --legacy-peer-deps
                   CI=true npm test -- --watchAll=false
             - name: Build Frontend
               run: |
@@ -26,23 +58,70 @@ jobs:
             - name: Test Backend
               run: |
                   cd backend
-                  npm ci
+                  npm ci --ignore-scripts
                   npm test
+
+            # --- Observability: rules and dashboards are otherwise only
+            # --- exercised by whoever is on call.
+            - name: Validate Prometheus rules and Grafana dashboards
+              run: |
+                  python3 -m venv /tmp/observability-venv
+                  /tmp/observability-venv/bin/pip install --quiet \
+                    --disable-pip-version-check --no-input --only-binary=:all: \
+                    PyYAML==6.0.3 promql-parser==0.12.0
+                  /tmp/observability-venv/bin/python -m unittest data-loader/test_validate_observability.py
+                  /tmp/observability-venv/bin/python scripts/validate-observability.py
+
+            # --- Infrastructure checks ---
             - name: Setup Terraform
               uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
               with:
                   terraform_version: 1.9.8
-            - name: Terraform Validate
+            - name: Report Terraform formatting differences
               run: |
-                  terraform fmt -recursive terraform/
-                  terraform -chdir=terraform init -backend=false
-                  terraform -chdir=terraform validate
-            - name: Validate Kubernetes Manifests
+                  terraform fmt -diff -recursive terraform/ > /tmp/terraform-fmt.diff || true
+                  if [ -s /tmp/terraform-fmt.diff ]; then
+                    {
+                      echo "### Terraform formatting differences"
+                      echo '```diff'
+                      cat /tmp/terraform-fmt.diff
+                      echo '```'
+                    } >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Check Terraform formatting
+              run: terraform fmt -check -recursive terraform/
+            - name: Initialize Terraform providers
+              run: terraform -chdir=terraform init -backend=false
+            - name: Validate Terraform configuration
+              run: terraform -chdir=terraform validate
+            - name: Validate Ansible playbook syntax
               run: |
-                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
+                  python3 -m venv /tmp/ansible-venv
+                  # 2.17.x is the oldest line that supports the runner's Python
+                  # 3.12; 2.11 (previously pinned) only runs on Python <= 3.10 and
+                  # fails at import time on the runner.
+                  /tmp/ansible-venv/bin/pip install --disable-pip-version-check --no-input ansible-core==2.17.7
+                  /tmp/ansible-venv/bin/ansible-playbook --syntax-check ansible/playbook.yml
+
+            # --- Kubernetes manifest validation: strict, no schema suppression ---
+            - name: Validate Kubernetes manifests
+              run: |
+                  set -euo pipefail
+                  release=https://github.com/yannh/kubeconform/releases/download/v0.6.7
+                  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+                    -o /tmp/kubeconform.tar.gz "$release/kubeconform-linux-amd64.tar.gz"
+                  # Verify against the release's own CHECKSUMS file rather than a
+                  # copy-pasted digest. A download or lookup failure is a failed
+                  # validation, never a skipped one.
+                  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+                    -o /tmp/kubeconform-CHECKSUMS "$release/CHECKSUMS"
+                  expected=$(awk '$2 == "kubeconform-linux-amd64.tar.gz" { print $1 }' /tmp/kubeconform-CHECKSUMS)
+                  [ ${#expected} -eq 64 ] || { echo "could not read kubeconform checksum from CHECKSUMS" >&2; exit 1; }
+                  echo "$expected  /tmp/kubeconform.tar.gz" | sha256sum --check
+                  tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
                   /tmp/kubeconform \
                     -strict \
                     -summary \
                     -schema-location default \
                     -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/b50f3fbc45169a14b6d2d3f767b32fd96ef4a3fa/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-                    kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/
+                    kubernetes/

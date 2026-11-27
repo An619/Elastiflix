@@ -1,0 +1,69 @@
+# HorizontalPodAutoscalers and PodDisruptionBudgets for the Elastiflix
+# application namespace.
+#
+# HPA requires metrics-server, which this repository does not install; on a
+# cluster without it the HPA reports <unknown> and leaves the desired replica
+# count untouched. See docs/security/phase-2-kubernetes-hardening.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+  namespace: elastiflix
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: elastiflix
+spec:
+  # Argo Rollouts exposes the scale subresource, so an HPA can adjust replica
+  # count without bypassing the canary strategy.
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend
+  namespace: elastiflix
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: elastiflix
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend

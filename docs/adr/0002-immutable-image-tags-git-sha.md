@@ -10,11 +10,11 @@ Kubernetes manifests referenced `:latest` (or floating tags) historically, which
 
 ## Decision
 
-All Elastiflix images (`an619/elastiflix-frontend`, `an619/elastiflix-backend`) are tagged **exclusively with the full git commit SHA** (`${{ github.sha }}`), and manifests are updated by the pipeline itself:
+All Elastiflix images (`an619/elastiflix-frontend`, `an619/elastiflix-backend`) are tagged **exclusively with the full git commit SHA** (`${{ github.sha }}`):
 
-- `.github/workflows/docker-push.yml` builds and pushes `…:<sha>` on `push` to `main` only.
-- The same job runs `sed` over `kubernetes/application/{frontend,backend}/deployment.yaml` (and the Rollout), commits `chore: update image tags to <sha> [skip ci]`, rebases, and pushes.
-- Argo CD then delivers the referenced SHA (ADR-0001). Image provenance == git provenance.
+- `.github/workflows/docker-push.yml` builds and pushes `…:<sha>` on `push` to `main` only, with an SBOM, max-mode provenance, and a keyless cosign signature that the same job verifies.
+- The job **does not write back to `main`**. It reports the published digest in the step summary; promoting a digest-pinned reference (`image@sha256:…`) into the manifests is a reviewed commit.
+- Argo CD then delivers the referenced digest (ADR-0001). Image provenance == git provenance.
 
 ## Consequences
 
@@ -28,3 +28,4 @@ All Elastiflix images (`an619/elastiflix-frontend`, `an619/elastiflix-backend`) 
 
 - **Semver release tags:** meaningful for libraries, wrong granularity for continuous delivery of an app.
 - **`latest`:** rejected outright — non-deterministic deploys, no rollback story.
+- **CI self-committing the tag bump:** used previously. Rejected because it bypassed review and required granting the workflow write access to `main`.

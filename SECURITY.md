@@ -24,6 +24,7 @@ We follow coordinated disclosure: after a fix ships, we're happy to credit you (
 - Non-root containers, `runAsNonRoot`, `drop: [ALL]` capabilities, no privilege escalation
 - No public compute IPs; AWS access via **SSM** to a private bastion
 - Secrets in git are **Sealed Secrets** (encrypted); cloud secrets via **External Secrets Operator + AWS Secrets Manager (IRSA)**
+- Application passwords are mounted as **files**, not environment variables. The backend reads them only from an allowlisted mount path (`backend/src/secretValue.js`) and refuses any other path. `bootstrap.sh` generates random local passwords and never sets a known one.
 - CI gates on every push/PR: **Gitleaks** (secrets), **Trivy** (CRITICAL/HIGH image CVEs), **Checkov** (Terraform hard gate), **SonarCloud** (SAST + Quality Gate), **npm audit / pip-audit** (high+), **Hadolint**
 - **All third-party GitHub Actions are SHA-pinned**
 - Image tags equal the git commit SHA (immutable provenance)

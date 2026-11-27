@@ -1,0 +1,14 @@
+# Copy to a private, git-ignored file, review, and pass with -var-file.
+aws_region   = "us-east-2"
+cluster_name = "elastiflix"
+environment  = "production"
+
+# production uses one NAT gateway per AZ (single_nat_gateway = false).
+cluster_version = "1.30"
+
+# Prefer leaving this empty and administering through the SSM bastion. An
+# explicit /32-scoped CIDR is required if public access is genuinely needed.
+cluster_endpoint_public_access_cidrs = []
+
+private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+public_subnet_cidrs  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]

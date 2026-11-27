@@ -1,0 +1,9 @@
+# Backend configuration for `terraform init -backend-config=environments/dev.backend.hcl`.
+#
+# terraform/backend.tf declares an empty s3 backend, so this file (not a
+# hard-coded bucket) selects the state location.
+bucket         = "elastiflix-terraform-state-an619"
+key            = "eks/dev/terraform.tfstate"
+region         = "us-east-2"
+dynamodb_table = "terraform-locks"
+encrypt        = true

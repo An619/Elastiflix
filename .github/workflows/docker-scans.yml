@@ -1,7 +1,40 @@
 name: Docker and IaC Scans
+
 on: workflow_call
 
 jobs:
+    trivy-filesystem-scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Scan filesystem dependencies
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  # The frontend lockfile's build-only toolchain is handled by
+                  # the exact, time-bound policy in dependency-scan.yml; npm audit
+                  # covers the runtime tree.
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "1"
+                  ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+            - name: Report all HIGH/CRITICAL filesystem findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: fs
+                  scan-ref: .
+                  skip-files: frontend/package-lock.json
+                  scanners: vuln
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
+                  severity: "CRITICAL,HIGH"
+
     trivy-image-scan:
         runs-on: ubuntu-latest
         strategy:
@@ -10,22 +43,33 @@ jobs:
         steps:
             - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-            - name: Build ${{ matrix.service }} Image
+            - name: Build ${{ matrix.service }} image
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
               with:
                   context: ./${{ matrix.service }}
                   file: ./${{ matrix.service }}/Dockerfile.prod
                   push: false
                   load: true
-                  tags: an619/elastiflix-${{ matrix.service }}:latest
+                  tags: an619/elastiflix-${{ matrix.service }}:scan
 
-            - name: Scan ${{ matrix.service }} Image
+            - name: Scan ${{ matrix.service }} image
               uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
               with:
-                  image-ref: "an619/elastiflix-${{ matrix.service }}:latest"
+                  version: v0.70.0
+                  image-ref: "an619/elastiflix-${{ matrix.service }}:scan"
                   format: "table"
                   exit-code: "1"
                   ignore-unfixed: true
+                  severity: "CRITICAL,HIGH"
+
+            - name: Report all HIGH/CRITICAL image findings, including unfixed
+              uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+              with:
+                  version: v0.70.0
+                  image-ref: "an619/elastiflix-${{ matrix.service }}:scan"
+                  format: table
+                  exit-code: "0" # Report-only companion; the preceding step is the blocking gate.
+                  ignore-unfixed: false
                   severity: "CRITICAL,HIGH"
 
     checkov-iac-scan:
@@ -37,15 +81,20 @@ jobs:
                   python3 -m venv .venv
                   .venv/bin/pip install --quiet checkov==3.4.10
             # Terraform gate stays hard. CKV_TF_1 (module sources must be
-            # commit-pinned) is skipped because the registry modules here
-            # are already version-pinned, which is the registry convention
-            # and cannot be expressed as a commit hash.
-            - name: Checkov Terraform Scan
+            # commit-pinned) is skipped because the registry modules here are
+            # already version-pinned, which is the registry convention and
+            # cannot be expressed as a commit hash.
+            - name: Checkov Terraform scan
               run: .venv/bin/checkov -d terraform/ --framework terraform --quiet --compact --skip-check CKV_TF_1
-            # Kubernetes scan is report-only for now: the raw scan reports
-            # ~105 findings (digest pinning, seccomp profiles, root-run
-            # beats) on manifests that cannot be fixed/verified without a
-            # cluster + registry. Track as tech debt; drop --soft-fail once
-            # the manifest hardening pass lands.
-            - name: Checkov Kubernetes Scan (report-only)
-              run: .venv/bin/checkov -d kubernetes/ --framework kubernetes --quiet --compact --soft-fail
+            # The Kubernetes scan is now a hard gate. Every remaining finding is
+            # suppressed at the resource with a `checkov.io/skipN` annotation
+            # that states the reason, and this step refuses to pass if the JSON
+            # report contains an unsuppressed finding or a parse error.
+            - name: Checkov Kubernetes scan (hard gate)
+              run: |
+                  set -euo pipefail
+                  mkdir -p /tmp/checkov
+                  .venv/bin/checkov -d kubernetes/ --framework kubernetes --compact \
+                    --output json --output-file-path /tmp/checkov
+                  .venv/bin/python scripts/check-checkov-report.py /tmp/checkov/results_json.json \
+                    >> "$GITHUB_STEP_SUMMARY"

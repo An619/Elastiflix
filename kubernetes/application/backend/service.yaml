@@ -3,9 +3,13 @@ kind: Service
 metadata:
   name: backend
   namespace: elastiflix
+  labels:
+    app: backend
 spec:
   selector:
     app: backend
   ports:
-    - port: 17700
-      targetPort: 17700
+    # Named so the ServiceMonitor can reference port: http.
+    - name: http
+      port: 17700
+      targetPort: http

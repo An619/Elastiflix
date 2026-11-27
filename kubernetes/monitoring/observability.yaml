@@ -1,0 +1,156 @@
+# Prometheus scraping, alerting rules and Grafana dashboards for Elastiflix.
+#
+# Everything here depends on three things that are configuration, not code:
+#   1. the kube-prometheus-stack Application selects release=monitoring
+#      (kubernetes/argocd-monitoring.yaml sets ruleSelector/serviceMonitorSelector)
+#   2. the backend Service exposes a port named `http`
+#   3. NetworkPolicy allows Prometheus to reach the backend on 17700
+#      (kubernetes/application/network-policy.yaml)
+# Without all three these objects exist and no time series appear. That is a
+# cluster-level fact this repository cannot verify - see
+# docs/security/phase-5-sre-observability.md.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: elastiflix-backend
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - elastiflix
+  selector:
+    matchLabels:
+      app: backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: elastiflix-availability
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: elastiflix.availability.recording
+      interval: 30s
+      rules:
+        # /healthz is excluded: kubelet probes would otherwise dominate the SLI
+        # and hide real user-facing failures. Prometheus' own /metrics scrapes
+        # are already excluded in the application before they are counted.
+        - record: elastiflix:requests:rate5m
+          expr: sum(rate(elastiflix_http_responses_total{route!="/healthz"}[5m]))
+        - record: elastiflix:errors:rate5m
+          expr: sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[5m])) or vector(0)
+        - record: elastiflix:error_ratio:rate5m
+          expr: |
+            elastiflix:errors:rate5m
+            / clamp_min(elastiflix:requests:rate5m, 0.000001)
+        - record: elastiflix:error_ratio:rate1h
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[1h]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[1h])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:error_ratio:rate30m
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[30m]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[30m])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:error_ratio:rate6h
+          expr: |
+            (
+              sum(rate(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[6h]))
+              / clamp_min(sum(rate(elastiflix_http_responses_total{route!="/healthz"}[6h])), 0.000001)
+            ) or vector(0)
+        - record: elastiflix:slo_requests:increase7d
+          expr: sum(increase(elastiflix_http_responses_total{route!="/healthz"}[7d]))
+        - record: elastiflix:slo_errors:increase7d
+          expr: sum(increase(elastiflix_http_responses_total{route!="/healthz",status_class="5xx"}[7d])) or vector(0)
+        - record: elastiflix:slo_availability:ratio7d
+          expr: 1 - (elastiflix:slo_errors:increase7d / clamp_min(elastiflix:slo_requests:increase7d, 1))
+        # 99.5% objective => a 0.5% error budget over the same 7-day window.
+        - record: elastiflix:slo_error_budget_remaining:ratio7d
+          expr: clamp_min(1 - (elastiflix:slo_errors:increase7d / clamp_min(0.005 * elastiflix:slo_requests:increase7d, 1)), 0)
+    - name: elastiflix.availability.alerts
+      rules:
+        # Multi-window burn rates for a 99.5%/7d objective: 14.4x over 1h/5m for
+        # the fast burn (2% of budget in an hour) and 6x over 6h/30m for the slow
+        # burn. The request-rate guard stops the alert from firing on a trickle
+        # of traffic where the ratio is meaningless.
+        - alert: ElastiflixSLOFastBurn
+          expr: |
+            elastiflix:error_ratio:rate5m > 0.072
+            and elastiflix:error_ratio:rate1h > 0.072
+            and elastiflix:requests:rate5m > 0
+          for: 2m
+          labels:
+            severity: critical
+            slo: availability
+          annotations:
+            summary: Elastiflix is burning its availability budget at 14x
+            description: The 99.5% seven-day objective is being consumed at more than 14x. Check the backend, Elasticsearch, and any in-flight canary before rolling back.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+        - alert: ElastiflixSLOSlowBurn
+          expr: |
+            elastiflix:error_ratio:rate30m > 0.03
+            and elastiflix:error_ratio:rate6h > 0.03
+            and elastiflix:requests:rate5m > 0
+          for: 15m
+          labels:
+            severity: warning
+            slo: availability
+          annotations:
+            summary: Elastiflix is burning its availability budget steadily
+            description: The 99.5% seven-day objective is being consumed at more than 6x over 30m and 6h.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+        - alert: ElastiflixSLOObjectiveMiss
+          expr: elastiflix:slo_requests:increase7d > 100 and elastiflix:slo_availability:ratio7d < 0.995
+          for: 10m
+          labels:
+            severity: warning
+            slo: availability
+          annotations:
+            summary: Elastiflix is below its proposed 99.5% seven-day objective
+            description: Availability over the rolling seven-day window is below 99.5%. Confirm the window is fully populated (at least 100 requests) and review the SLO dashboard.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+    - name: elastiflix.dependencies
+      rules:
+        # Missing data must never look healthy: these two alerts are what turn a
+        # silent scrape failure into a visible page (once delivery exists).
+        - alert: ElastiflixBackendMetricsMissing
+          expr: absent(up{namespace="elastiflix", service="backend"} == 1)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Prometheus is not scraping the Elastiflix backend
+            description: No healthy backend metrics target has been discovered for five minutes, so every SLO signal is unknown rather than good.
+            runbook_url: https://github.com/An619/Elastiflix/blob/main/docs/runbooks/elastiflix-availability.md
+        - alert: ElastiflixRedisUnavailable
+          expr: elastiflix_redis_up == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The backend cannot reach Redis
+            description: Redis is an optional dependency (ADR-0004). Caching and cache-hit metrics are degraded; search still works.
+        - alert: ElastiflixBackendHighLatency
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum(rate(elastiflix_http_request_duration_seconds_bucket{route=~"/api/.*"}[5m])) by (le)
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Elastiflix search latency p95 is above one second
+            description: 95th percentile latency for /api/* has exceeded 1s for ten minutes.

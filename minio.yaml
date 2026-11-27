@@ -25,10 +25,27 @@ spec:
       labels:
         app: minio
     spec:
+      # MinIO talks to no Kubernetes API, and no RoleBinding grants the `velero`
+      # namespace's default ServiceAccount anything, so a mounted token would be
+      # a credential with no use that only adds a way to steal one.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # pgsty/silo is MinIO-derived and runs as uid 1000 in its published image.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: minio
           image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args:
             - server
             - /data
@@ -48,6 +65,39 @@ spec:
           ports:
             - containerPort: 9000
             - containerPort: 9001
+          # A memory limit is what stops one demo object store from taking the
+          # node down with it. CPU is left as a request-with-headroom limit so
+          # start-up is not throttled.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+              ephemeral-storage: "256Mi"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+              # S6870 wants the container's own ephemeral-storage bound, not just
+              # the volume's. Must exceed the sum of the emptyDir sizeLimits
+              # below (512Mi + 64Mi) or the pod is rejected at admission.
+              ephemeral-storage: "1Gi"
+          # readOnlyRootFilesystem above makes every writable path explicit.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # This manifest previously declared no volumes at all: MinIO wrote to
+        # /data inside the container's writable layer. readOnlyRootFilesystem
+        # above requires an explicit mount, so /data becomes a bounded emptyDir.
+        # Stored objects are lost when the pod is replaced - the same outcome as
+        # before, since the container layer was never durable either.
+        - name: data
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

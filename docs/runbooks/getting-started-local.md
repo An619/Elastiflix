@@ -8,6 +8,9 @@ phase validation exercises.
 Path C is the checks that need neither — they validate the repository itself (tests, manifests,
 security scan) and they all pass before you involve Docker at all.
 
+> How the whole branch was developed, including what is still unverified and the
+defects found by running it: [../how-this-was-built.md](../how-this-was-built.md).
+
 > **What I actually ran while writing this:** the whole of Path C (backend 38 tests, frontend 13
 > tests, observability validator, snapshot tests, 13 verifier tests) and `bash -n` on every script.
 > I have no Docker daemon, no Minikube and no kubectl in my environment, so every command in Paths A

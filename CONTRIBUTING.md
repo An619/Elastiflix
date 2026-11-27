@@ -2,6 +2,13 @@
 
 Thanks for helping improve Elastiflix! This project doubles as a reference for enterprise-grade delivery, so please keep the bar high.
 
+## How this work was developed
+
+[docs/how-this-was-built.md](docs/how-this-was-built.md) records the development
+method, what was run against a real environment, what is still unverified, and
+the defects found by running it. Read it before assuming any claim in the runbooks
+has been demonstrated.
+
 ## Ground rules
 
 - Everything goes through a PR to `main`. Direct pushes are not allowed (branch protection).

@@ -50,7 +50,7 @@ kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge \
 # "admin123" into argocd-secret, which is a published credential.
 ARGOCD_ADMIN_PASSWORD="$(kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)"
-if [ -z "${ARGOCD_ADMIN_PASSWORD}" ]; then
+if [[ -z "${ARGOCD_ADMIN_PASSWORD}" ]]; then
   echo "⚠️  Argo CD did not generate an initial admin password; set one with 'argocd account update-password'."
 fi
 
@@ -115,8 +115,9 @@ echo ""
 echo "✅ Bootstrap complete. Argo CD 3.6.3, Rollouts ${ARGO_ROLLOUTS_VERSION}, Falco ${FALCO_CHART_VERSION}."
 echo "⚠️  Open an Administrator PowerShell and run: net stop was /y && minikube tunnel"
 echo ""
-echo "🔑 Argo CD: http://argocd.local | user: admin"
-if [ -n "${ARGOCD_ADMIN_PASSWORD}" ]; then
+# Local Minikube-only address; there is no TLS in front of it by design.
+echo "🔑 Argo CD: http://argocd.local | user: admin" # NOSONAR - local cluster address, not a credential
+if [[ -n "${ARGOCD_ADMIN_PASSWORD}" ]]; then
   echo "   initial password: ${ARGOCD_ADMIN_PASSWORD}"
   echo "   Change it immediately: argocd account update-password"
 else

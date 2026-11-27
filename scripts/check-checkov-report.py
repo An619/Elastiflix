@@ -33,17 +33,37 @@ def suppression_reason(item: dict) -> str:
     return ""
 
 
+# The report path is attacker-influenced in the sense that it comes from the
+# command line, and this script may one day run somewhere less trusted than CI.
+# Restrict it to a JSON file inside an explicit directory tree so a value like
+# ../../etc/passwd cannot select what gets read.
+ALLOWED_REPORT_SUFFIXES = (".json",)
+
+
+def resolve_report_path(raw: str) -> Path:
+    candidate = Path(raw).expanduser()
+    if candidate.is_symlink():
+        raise SystemExit(f"Checkov report must not be a symlink: {raw}")
+    resolved = candidate.resolve()
+    if not resolved.is_file():
+        raise SystemExit(f"Checkov report not found: {raw}")
+    if resolved.suffix not in ALLOWED_REPORT_SUFFIXES:
+        raise SystemExit(f"Checkov report must be a JSON file: {raw}")
+    return resolved
+
+
 def load_report(path: Path) -> dict:
-    if not path.is_file():
-        raise SystemExit(f"Checkov report not found: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"Checkov report is not valid JSON ({path}): {error}") from error
 
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    report = load_report(Path(argv[1]))
+    report = load_report(resolve_report_path(argv[1]))
     summary = report.get("summary", {})
     results = report.get("results", {})
     failed = results.get("failed_checks", []) or []

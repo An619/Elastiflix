@@ -96,9 +96,11 @@ spec:
             runAsUser: 0
             allowPrivilegeEscalation: false
             capabilities:
+              # Everything is dropped; the single re-added capability is the
+              # narrow read-bypass needed for root-owned log files. It is a
+              # documented, reviewed exception, not a default.
               drop: ["ALL"]
-              # Filebeat only needs to read the mounted log files.
-              add: ["DAC_READ_SEARCH"]
+              add: ["DAC_READ_SEARCH"] # NOSONAR - required to read node logs; all other capabilities dropped, pod runs as a dedicated SA without API verbs beyond get/list/watch
           resources:
             requests:
               cpu: 100m

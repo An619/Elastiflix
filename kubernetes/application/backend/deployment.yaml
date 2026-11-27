@@ -100,7 +100,10 @@ spec:
             failureThreshold: 3
       volumes:
         - name: tmp
-          emptyDir: {}
+          # Bounded: an unbounded emptyDir lets a runaway process consume node
+          # ephemeral storage until every pod on the node is evicted.
+          emptyDir:
+            sizeLimit: 256Mi
         - name: secrets
           secret:
             # optional: the backend starts without Redis/RabbitMQ (ADR-0004);

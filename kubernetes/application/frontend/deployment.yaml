@@ -105,9 +105,11 @@ spec:
             failureThreshold: 3
       volumes:
         - name: nginx-cache
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 256Mi
         - name: nginx-tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: ServiceAccount

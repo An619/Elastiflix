@@ -14,7 +14,10 @@ jobs:
             - name: Audit backend runtime tree
               run: |
                   cd backend
-                  npm ci
+                  # --ignore-scripts: auditing must not execute dependency
+                  # lifecycle scripts. No lockfile entry may depend on them for
+                  # this repository's audits.
+                  npm ci --ignore-scripts
                   # Medium and low severities are reported but do not block: the
                   # gate is HIGH and above. Current mediums come from dev-only
                   # tooling (c8 -> test-exclude -> glob/minimatch) and are
@@ -23,7 +26,10 @@ jobs:
             - name: Audit frontend production tree
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps
+                  # --ignore-scripts for the same reason as the backend audit.
+                  # (react-scripts is only needed for building/testing, which
+                  # other jobs do with scripts enabled.)
+                  npm ci --legacy-peer-deps --ignore-scripts
                   # react-scripts/sass are build-only devDependencies. The
                   # remaining production-tree advisory (prismjs via
                   # @elastic/eui) is moderate and only fixed by a breaking EUI

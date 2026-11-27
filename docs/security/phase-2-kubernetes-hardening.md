@@ -78,6 +78,20 @@ enforce, and the exceptions are on the DaemonSet itself.
 | Subnet ELB discovery tags | the load balancer controller cannot place an ALB without them |
 | State bucket versioning/SSE-KMS/public-access block, lock table PITR | state is the only record of what exists |
 
+## SonarCloud findings from the PR (resolved here, or documented)
+
+The project's SonarCloud gate requires security rating A on new code, so each
+finding raised by this branch is either fixed or carries an in-code reason:
+
+| Finding | Resolution |
+|---|---|
+| Path Traversal via command-line argument (`scripts/check-checkov-report.py`) | Fixed: the report path must resolve to an existing non-symlink `.json` file, and invalid JSON is a hard error |
+| `npm ci` without `--ignore-scripts` in the audit job | Fixed: audits install with `--ignore-scripts` |
+| `[` instead of `[[` in `bootstrap.sh` | Fixed |
+| Clear-text URL in `bootstrap.sh` | Documented: the only such URL is the local `http://argocd.local` address printed for the operator |
+| Storage limit missing on a container volume (`backend` pod) | Fixed: every `emptyDir` on the application pods now has a `sizeLimit` |
+| Capability assignment (`filebeat`) | Documented: `DAC_READ_SEARCH` is required to read root-owned node logs; all other capabilities are dropped and the pod runs under a dedicated ServiceAccount |
+
 ## Verification performed
 
 - `kubernetes-validate` 1.37 strict against Kubernetes 1.30 schemas (the version

@@ -38,30 +38,51 @@ build_backend:
 # ----------------------------------------
 trivy_scan:
   stage: security
+  # Pinned: an unpinned scanner image means an unreviewed scanner version can
+  # change the gate result between pipelines.
   image:
-    name: aquasec/trivy:latest
+    name: aquasec/trivy:0.70.0
     entrypoint: [""]
   script:
+    # Blocking gate: HIGH/CRITICAL with a fix available.
     - trivy fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress .
+    # Informational companion so unfixed findings stay visible.
+    - trivy fs --exit-code 0 --severity HIGH,CRITICAL --no-progress .
+
+pip_audit:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - python3 -m pip install --disable-pip-version-check --no-input pip-audit==2.10.1
+    - pip-audit -r data-loader/pip-requirements.txt
 
 # ----------------------------------------
 # Stage 3: Package (Docker Build & Push)
 # ----------------------------------------
+# Mirrors the GitHub pipeline's contract (ADR-0002): images are published only
+# under the immutable commit SHA. The previous `:latest` tag is deliberately
+# gone -- a mutable tag makes "what is deployed?" unanswerable and defeats
+# rollback.
 package_images:
   stage: package
   image: docker:24.0.5
   services:
     - docker:24.0.5-dind
+  rules:
+    # Publishing is limited to the default branch, matching the GitHub workflow.
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
     - echo "Logging into GitLab Container Registry..."
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
 
-    - echo "Building Frontend Image..."
-    - docker build -f frontend/Dockerfile.prod -t $IMAGE_FRONTEND:$CI_COMMIT_SHORT_SHA -t $IMAGE_FRONTEND:latest ./frontend
-    - docker push $IMAGE_FRONTEND:$CI_COMMIT_SHORT_SHA
-    - docker push $IMAGE_FRONTEND:latest
+    - echo "Building Frontend image..."
+    - docker build -f frontend/Dockerfile.prod -t $IMAGE_FRONTEND:$CI_COMMIT_SHA ./frontend
+    - docker push $IMAGE_FRONTEND:$CI_COMMIT_SHA
 
-    - echo "Building Backend Image..."
-    - docker build -f backend/Dockerfile.prod -t $IMAGE_BACKEND:$CI_COMMIT_SHORT_SHA -t $IMAGE_BACKEND:latest ./backend
-    - docker push $IMAGE_BACKEND:$CI_COMMIT_SHORT_SHA
-    - docker push $IMAGE_BACKEND:latest
+    - echo "Building Backend image..."
+    - docker build -f backend/Dockerfile.prod -t $IMAGE_BACKEND:$CI_COMMIT_SHA ./backend
+    - docker push $IMAGE_BACKEND:$CI_COMMIT_SHA
+
+    - echo "Promote these references through a reviewed GitOps change:"
+    - echo "  $IMAGE_FRONTEND:$CI_COMMIT_SHA"
+    - echo "  $IMAGE_BACKEND:$CI_COMMIT_SHA"

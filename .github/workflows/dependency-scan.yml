@@ -1,4 +1,5 @@
 name: Dependency Checks
+
 on: workflow_call
 
 jobs:
@@ -10,17 +11,43 @@ jobs:
               uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
               with:
                   node-version: "22"
-            - name: Audit Backend
+            - name: Audit backend runtime tree
               run: |
                   cd backend
+                  npm ci
+                  # Medium and low severities are reported but do not block: the
+                  # gate is HIGH and above. Current mediums come from dev-only
+                  # tooling (c8 -> test-exclude -> glob/minimatch) and are
+                  # tracked in docs/security/phase-1-cicd-devsecops.md.
                   npm audit --audit-level=high
-            - name: Audit Frontend
+            - name: Audit frontend production tree
               run: |
                   cd frontend
-                  # react-scripts/sass are devDependencies (build-only); audit the
-                  # production dependency tree that actually ships.
+                  npm ci --legacy-peer-deps
+                  # react-scripts/sass are build-only devDependencies. The
+                  # remaining production-tree advisory (prismjs via
+                  # @elastic/eui) is moderate and only fixed by a breaking EUI
+                  # major upgrade, so the blocking threshold is HIGH.
                   npm audit --omit=dev --audit-level=high
-            - name: Audit Python Dependencies
+            - name: Summarize every advisory for the record
+              if: always()
               run: |
-                  pip install pip-audit # NOSONAR - CI-only tooling install, pinned by workflow context
-                  pip-audit -r data-loader/pip-requirements.txt
+                  {
+                    echo "## npm audit (informational, all severities)"
+                    echo '```'
+                    (cd backend && npm audit 2>&1 | tail -n 40) || true
+                    (cd frontend && npm audit --omit=dev 2>&1 | tail -n 40) || true
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+    python-audit:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Audit Python dependencies
+              run: |
+                  python3 -m venv .venv
+                  # Pinned: an unpinned audit tool is itself an unreviewed
+                  # dependency in the security gate.
+                  .venv/bin/pip install --quiet --disable-pip-version-check --no-input pip-audit==2.10.1
+                  .venv/bin/pip-audit -r data-loader/pip-requirements.txt

@@ -664,7 +664,13 @@ terraform apply -var-file=dev.tfvars
 terraform output
 ```
 
-**Expected:** outputs including `cluster_name`, `cluster_endpoint`, `cluster_endpoint_public_access_cidrs`.
+**Expected:** these seven outputs (`terraform output` names only):
+`bastion_ssm_command`, `configure_kubectl`, `eks_cluster_name`, `cluster_endpoint_public_access_cidrs`,
+`alb_controller_role_arn`, `eso_role_arn`, `ebs_csi_role_arn`.
+
+⚠️ There is **no** `cluster_endpoint` or `cluster_name` output — the names are `eks_cluster_name`
+and the endpoint comes from `configure_kubectl`. An earlier draft of this runbook named outputs
+that do not exist.
 The EKS API is **private by default** — you reach it through the SSM bastion, not your laptop.
 That is why the next steps belong in a bastion session.
 
@@ -685,8 +691,10 @@ controller will have no valid IRSA role.
 Then verify the EKS-specific paths:
 
 ```bash
-# EKS audit logging is on by default in the module (audit, api, authenticator)
-aws eks describe-cluster --name elastiflix-eks \
+# EKS audit logging is on by default in the module (audit, api, authenticator).
+# Take the name from Terraform rather than repeating the literal that A3 warns about:
+CLUSTER=$(terraform -chdir=terraform output -raw eks_cluster_name)
+aws eks describe-cluster --name "$CLUSTER" \
   --query 'cluster.logging.clusterLogging[?enabled==`true`].types' --output json
 
 # Secrets come from AWS Secrets Manager via ESO, not from local Secrets

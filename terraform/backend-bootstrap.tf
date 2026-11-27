@@ -72,7 +72,9 @@ resource "aws_kms_key" "terraform_state" {
 # Explicit key policy: full control for the account principal (so Terraform can
 # still manage the key) and nothing else. Without a policy statement the key is
 # governed by the default policy, which this check flags as unauditable.
-data "aws_caller_identity" "current" {}
+#
+# It reuses the aws_caller_identity data source declared in eks.tf; declaring a
+# second one with the same name is a duplicate-resource error at validate time.
 
 resource "aws_kms_key_policy" "terraform_state" {
   key_id = aws_kms_key.terraform_state.id

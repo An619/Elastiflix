@@ -20,6 +20,19 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 
+def suppression_reason(item: dict) -> str:
+    """Checkov records the reason under check_result.suppress_comment.
+
+    Some versions also put it at the top level, so both are accepted - but a
+    missing reason is always a failure, never an empty string that passes.
+    """
+    for candidate in (item.get("check_result") or {}, item):
+        reason = candidate.get("suppress_comment")
+        if isinstance(reason, str) and reason.strip():
+            return reason.strip()
+    return ""
+
+
 def load_report(path: Path) -> dict:
     if not path.is_file():
         raise SystemExit(f"Checkov report not found: {path}")
@@ -47,7 +60,7 @@ def main(argv: list[str]) -> int:
     if skipped:
         by_check: dict[str, list[str]] = defaultdict(list)
         for item in skipped:
-            reason = (item.get("suppress_comment") or "").strip()
+            reason = suppression_reason(item)
             by_check[item.get("check_id", "unknown")].append(
                 f"{item.get('resource', '?')}: {reason or 'NO REASON GIVEN'}"
             )
@@ -66,9 +79,7 @@ def main(argv: list[str]) -> int:
         problems.append(f"{len(failed)} unsuppressed failing check(s): {detail}")
     if summary.get("parsing_errors", 0):
         problems.append(f"{summary['parsing_errors']} manifest parse error(s)")
-    unreasoned = [
-        item for item in skipped if not (item.get("suppress_comment") or "").strip()
-    ]
+    unreasoned = [item for item in skipped if not suppression_reason(item)]
     if unreasoned:
         names = ", ".join(sorted({item.get("check_id", "unknown") for item in unreasoned}))
         problems.append(f"{len(unreasoned)} suppression(s) without a reason: {names}")

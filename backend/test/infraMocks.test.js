@@ -13,10 +13,15 @@ process.env.RABBITMQ_URL = "amqp://fake-amqp:5672";
 // --- In-memory fake Redis ---
 const store = new Map();
 let failGet = false;
+let failInfo = false;
 const fakeClient = {
   on() {},
   async connect() {},
   async quit() {},
+  async info() {
+    if (failInfo) throw new Error("info unavailable");
+    return "# Memory\nused_memory:12345\n";
+  },
   async get(key) {
     if (failGet) throw new Error("get boom");
     return store.get(key) ?? null;
@@ -137,6 +142,21 @@ describe("Backend with Redis + RabbitMQ (mocked)", () => {
     failSend = false;
     assert.equal(res.status, 200);
     assert.equal(res.body.results[0].title, "Mocked Title");
+  });
+
+  it("exposes Redis reachability as a gauge while scraping succeeds", async () => {
+    const res = await request(app).get("/metrics");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /^elastiflix_redis_up 1$/m);
+  });
+
+  it("keeps application metrics available when the Redis probe fails", async () => {
+    failInfo = true;
+    const res = await request(app).get("/metrics");
+    failInfo = false;
+    assert.equal(res.status, 200);
+    assert.match(res.text, /^elastiflix_redis_up 0$/m);
+    assert.match(res.text, /^elastiflix_http_requests_total \d+$/m);
   });
 
   it("autocomplete returns suggestions from the search backend", async () => {

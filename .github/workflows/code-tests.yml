@@ -42,7 +42,14 @@ jobs:
             - name: Test Frontend
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps
+                  # --ignore-scripts: the four packages here that define install
+                  # scripts (core-js, core-js-pure, @parcel/watcher, fsevents) only
+                  # print funding/sponsorship output; none of them compile or
+                  # download anything the build needs. Verified: tests and
+                  # `react-scripts build` both pass with the flag. Without it an
+                  # install script is arbitrary code from the dependency tree
+                  # running on the runner with the workflow's token.
+                  npm ci --ignore-scripts --legacy-peer-deps
                   CI=true npm test -- --watchAll=false
             - name: Build Frontend
               run: |
@@ -51,7 +58,7 @@ jobs:
             - name: Test Backend
               run: |
                   cd backend
-                  npm ci
+                  npm ci --ignore-scripts
                   npm test
 
             # --- Observability: rules and dashboards are otherwise only

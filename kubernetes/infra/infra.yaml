@@ -68,9 +68,16 @@ spec:
             requests:
               cpu: "100m"
               memory: "128Mi"
+              # /tmp is an emptyDir and /run/secrets/redis is a tmpfs Secret
+              # mount; both are backed by the node's ephemeral storage. A limit
+              # here bounds what a runaway redis process can write to the node.
+              ephemeral-storage: "128Mi"
             limits:
               memory: "256Mi"
               cpu: "250m"
+              # Must exceed emptyDir.sizeLimit below, or the pod is rejected by
+              # the kubelet before it starts.
+              ephemeral-storage: "256Mi"
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -103,7 +110,8 @@ spec:
           persistentVolumeClaim:
             claimName: redis-pvc
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 64Mi
         - name: redis-secret
           secret:
             secretName: redis-secret
@@ -189,8 +197,12 @@ spec:
             requests:
               cpu: "100m"
               memory: "256Mi"
+              ephemeral-storage: "256Mi"
             limits:
               memory: "512Mi"
+              # RabbitMQ stages message and mnesia data under /tmp during
+              # start-up and shutdown; keep this above emptyDir.sizeLimit.
+              ephemeral-storage: "512Mi"
               cpu: "500m"
           securityContext:
             runAsNonRoot: true
@@ -229,7 +241,8 @@ spec:
           persistentVolumeClaim:
             claimName: rabbitmq-pvc
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 128Mi
         - name: rabbitmq-secret
           secret:
             secretName: rabbitmq-secret

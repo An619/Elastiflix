@@ -27,12 +27,12 @@ jobs:
             - name: Generate Frontend Coverage
               run: |
                   cd frontend
-                  npm ci --legacy-peer-deps # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  npm ci --ignore-scripts --legacy-peer-deps # NOSONAR - reproducible install from lockfile; lifecycle scripts disabled
                   CI=true npm test -- --watchAll=false --coverage --collectCoverageFrom="src/**/*.{js,jsx}"
             - name: Generate Backend Coverage
               run: |
                   cd backend
-                  npm ci # NOSONAR - standard dependency CI step, reproducible install from lockfile
+                  npm ci --ignore-scripts # NOSONAR - reproducible install from lockfile; lifecycle scripts disabled
                   npm run test:coverage
             - name: Generate Python Coverage
               run: |
@@ -52,4 +52,13 @@ jobs:
               uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+            # Without this the scan uploads and the job passes regardless of the
+            # verdict: the gate showed ERROR while GitHub Actions was green, so a
+            # failing gate blocked nothing. The action polls the report-task the
+            # scanner wrote above and exits non-zero if the gate is not PASSED.
+            - name: Enforce the SonarCloud quality gate
+              uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
+              timeout-minutes: 10
+              env:
                   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

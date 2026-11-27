@@ -197,6 +197,17 @@ services:
       - ES_API_KEY=
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}@rabbitmq:5672
+    # Docker's `local` log driver (the default on some Docker Desktop/engine
+    # configurations) writes a BINARY format. Filebeat's `container` parser
+    # expects Docker's JSON envelope, so with `local` it reads the files, finds
+    # nothing it can unwrap, and ships zero events - with no error anywhere:
+    # Filebeat looks healthy, Logstash's beats input just never receives
+    # anything. Pinning json-file is what makes the logs shippable at all.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "17700:17700"
     volumes:
@@ -220,6 +231,17 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend/src:/app/src
+    # Docker's `local` log driver (the default on some Docker Desktop/engine
+    # configurations) writes a BINARY format. Filebeat's `container` parser
+    # expects Docker's JSON envelope, so with `local` it reads the files, finds
+    # nothing it can unwrap, and ships zero events - with no error anywhere:
+    # Filebeat looks healthy, Logstash's beats input just never receives
+    # anything. Pinning json-file is what makes the logs shippable at all.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - backend
 

@@ -1,0 +1,16 @@
+# Copy to terraform/finops/demo.tfvars (git-ignored via *.tfvars) and edit there.
+# Never commit real recipients or account amounts.
+
+aws_region   = "us-east-1"
+project_name = "elastiflix"
+environment  = "demo"
+
+# A reviewed account-wide monthly USD threshold. This is an alert threshold,
+# not a spending cap and not a recommendation: AWS Budgets does not stop spend.
+# monthly_budget_amount_usd = 50
+
+# Approved recipients only.
+# alert_email_addresses = ["your-approved-address@example.invalid"]
+
+# Both ACTUAL and FORECASTED alerts are raised at every configured threshold.
+alert_threshold_percentages = [25, 50, 75, 100]

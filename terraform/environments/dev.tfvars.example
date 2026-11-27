@@ -1,0 +1,13 @@
+# Copy to a private, git-ignored file, review, and pass with -var-file.
+aws_region   = "us-east-2"
+cluster_name = "elastiflix"
+environment  = "dev"
+
+# EKS control-plane endpoint. Empty disables public access and requires the SSM
+# bastion (recommended). If you must enable it, use your own /32, never 0.0.0.0/0.
+cluster_endpoint_public_access_cidrs = []
+
+# Keep these in sync with kubernetes/application/network-policy.yaml,
+# kubernetes/infra/network-policy.yaml and kubernetes/elastic-stack/network-policy.yaml.
+private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+public_subnet_cidrs  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]

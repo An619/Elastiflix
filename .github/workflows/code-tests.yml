@@ -40,4 +40,9 @@ jobs:
             - name: Validate Kubernetes Manifests
               run: |
                   curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /tmp kubeconform # NOSONAR - CI-only, official release artifact, no runtime exposure
-                  /tmp/kubeconform -strict -summary kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/ || true
+                  /tmp/kubeconform \
+                    -strict \
+                    -summary \
+                    -schema-location default \
+                    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/b50f3fbc45169a14b6d2d3f767b32fd96ef4a3fa/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                    kubernetes/application/ kubernetes/infra/ kubernetes/elastic-stack/

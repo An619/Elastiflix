@@ -129,7 +129,17 @@ data_view "elastiflix-metrics" "metricbeat-*"      "@timestamp"   "Elastiflix Me
 # still build one live on camera -- these are the safety net, and the "here is
 # where we are going" shot before you start.
 echo "==> Loading the prebuilt dashboards"
-./load-dashboards.sh | grep -v '^==>' || true
+# No pipe: load-dashboards.sh writes all status output to stderr, so there is
+# nothing to filter. Piping through `grep -v` used to be how this was tidied up,
+# and on Windows that pipe turned into "Binary file (standard input) matches" -
+# because load-dashboards.sh printed nothing at all (its interpreter probe had
+# exited) and grep, given empty input, still exited 0. The `|| true` then hid it.
+# A failure here is now visible and stops the run, which is the point: a silent
+# failure to load the dashboards looks identical to success.
+if ! ./load-dashboards.sh; then
+  echo "WARNING: some dashboards failed to load - see the FAILED lines above." >&2
+  echo "         The rest of the stack is unaffected; retry with ./load-dashboards.sh" >&2
+fi
 
 cat <<EOF
 

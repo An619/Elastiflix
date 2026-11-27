@@ -59,12 +59,12 @@ for line in open(src):
     try:
         urllib.request.urlopen(req); ok += 1
         if o["type"] == "dashboard":
-            print(f"    {o['attributes']['title']}")
+            print(f"    {o['attributes']['title']}", file=sys.stderr)
     except urllib.error.HTTPError as e:
         fail += 1
         print(f"    FAILED {o['type']}/{o['id']}: {e.code} {e.read()[:200].decode()}", file=sys.stderr)
-print(f"==> {ok} saved objects loaded" + (f", {fail} FAILED" if fail else ""))
+print(f"==> {ok} saved objects loaded" + (f", {fail} FAILED" if fail else ""), file=sys.stderr)
 sys.exit(1 if fail else 0)
 PY
 
-echo "==> Kibana -> Dashboards"
+echo "==> Kibana -> Dashboards" >&2

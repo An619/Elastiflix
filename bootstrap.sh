@@ -1,66 +1,109 @@
 #!/bin/bash
+# Local (Minikube) bootstrap for Elastiflix.
+#
+# This is a convenience script, not a security boundary: it installs a demo
+# cluster on your machine. It still avoids the mistakes that made the previous
+# version unsafe to reuse - a published admin password, "stable" branch
+# manifests, and a plaintext Argo CD Ingress.
+#
+# Everything it installs is version-pinned. Bump the pins in a reviewed change.
+set -euo pipefail
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+ARGOCD_VERSION="${ARGOCD_VERSION:-v3.6.3}"
+ARGO_ROLLOUTS_VERSION="${ARGO_ROLLOUTS_VERSION:-v1.10.2}"
+SEALED_SECRETS_VERSION="${SEALED_SECRETS_VERSION:-v0.27.3}"
+FALCO_CHART_VERSION="${FALCO_CHART_VERSION:-9.2.2}"
 
 echo "🚀 1. Starting Minikube..."
-minikube start --cpus=4 --memory=7500 --disk-size=30g
+# Calico is required for NetworkPolicy enforcement; the default CNI accepts
+# NetworkPolicy objects and ignores them, which looks identical to a working
+# policy until traffic that should be blocked gets through.
+minikube start --cpus=4 --memory=7500 --disk-size=30g --cni=calico
 minikube addons enable ingress
 
-echo "🐳 2. Loading Docker images into Minikube..."
-# Load local images to avoid Docker Hub rate limits and errors
-minikube image load an619/elastiflix-frontend:latest || true
-minikube image load an619/elastiflix-backend:latest || true
-minikube image load an619/elastiflix-frontend:v0.1.0 || true
-minikube image load an619/elastiflix-backend:v0.1.0 || true
+echo "🐳 2. Building and loading local images..."
+# Build what this checkout actually contains instead of loading whatever
+# <image>:latest happens to be on the daemon. The manifests reference a commit
+# SHA, so the tag below is deliberate: overriding it locally is a local-only
+# change, never a commit.
+GIT_SHA="$(git rev-parse HEAD)"
+for component in frontend backend; do
+  docker build -f "${component}/Dockerfile.prod" -t "an619/elastiflix-${component}:${GIT_SHA}" "./${component}"
+  minikube image load "an619/elastiflix-${component}:${GIT_SHA}"
+done
 
-echo "📦 3. Installing Argo CD..."
+echo "📦 3. Installing Argo CD ${ARGOCD_VERSION}..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# Pinned release, not the moving `stable` branch.
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
 echo "⏳ 4. Waiting for Argo CD to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
 
-echo "🔧 5. Patching Argo CD (HTTP Ingress & Admin Password)..."
-# Allow HTTP traffic from Ingress
-kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
-# Reset admin password to admin123
-kubectl -n argocd patch secret argocd-secret --type merge -p '{"stringData": {"admin.password": "$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW", "admin.passwordMtime": "2024-01-01T00:00:00Z"}}'
+echo "🔧 5. Configuring Argo CD..."
+# HTTP behind the local ingress. Acceptable for Minikube only.
+kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge \
+  -p '{"data":{"server.insecure":"true"}}'
+
+# No known-password patch. The previous version wrote a fixed bcrypt hash for
+# "admin123" into argocd-secret, which is a published credential.
+ARGOCD_ADMIN_PASSWORD="$(kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+if [ -z "${ARGOCD_ADMIN_PASSWORD}" ]; then
+  echo "⚠️  Argo CD did not generate an initial admin password; set one with 'argocd account update-password'."
+fi
+
 kubectl rollout restart deployment argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=120s deployment/argocd-server -n argocd
 
-echo "🚀 6. Installing Argo Rollouts..."
+echo "🚀 6. Installing Argo Rollouts ${ARGO_ROLLOUTS_VERSION}..."
 kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply --server-side --force-conflicts -n argo-rollouts -f https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml
+kubectl apply --server-side --force-conflicts -n argo-rollouts \
+  -f "https://raw.githubusercontent.com/argoproj/argo-rollouts/${ARGO_ROLLOUTS_VERSION}/manifests/install.yaml"
 
-echo "🦅 7. Installing Falco (Runtime Security)..."
+echo "🦅 7. Installing Falco (runtime security)..."
 helm repo add falcosecurity https://falcosecurity.github.io/charts
 helm repo update
-helm upgrade --install falco falcosecurity/falco -n falco --create-namespace --set driver.kind=modern_ebpf --set tty=true --wait
+helm upgrade --install falco falcosecurity/falco -n falco --create-namespace \
+  --version "${FALCO_CHART_VERSION}" \
+  --set driver.kind=modern_ebpf --set tty=true --wait
 
-echo "🔐 7b. Installing SealedSecrets controller..."
-kubectl create namespace kube-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/controller.yaml
+echo "🔐 7b. Installing SealedSecrets controller ${SEALED_SECRETS_VERSION}..."
+kubectl apply -f "https://github.com/bitnami-labs/sealed-secrets/releases/download/${SEALED_SECRETS_VERSION}/controller.yaml"
 
 echo "🔑 7c. Creating local Secrets for Minikube (no ESO / AWS on this cluster)..."
-# SealedSecrets ciphertexts in kubernetes/infra/*-sealedsecret.yaml were
-# sealed against a different cluster's key and cannot decrypt here, so
-# create plain Secrets locally. Override via env vars if needed:
-#   REDIS_PASSWORD=... RABBITMQ_PASSWORD=... ./bootstrap.sh
+# The SealedSecret ciphertexts in kubernetes/infra/ were sealed against another
+# cluster's key and cannot decrypt here, so create plain Secrets locally.
+# Credentials are generated or supplied via the environment; they are never
+# defaulted to a known value and never written to the repository.
+random_password() {
+  # openssl is used only for a local demo credential; fall back to /dev/urandom
+  # so the script does not fail on a machine without it.
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 16
+  else
+    head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
+REDIS_PASSWORD="${REDIS_PASSWORD:-$(random_password)}"
+RABBITMQ_PASSWORD="${RABBITMQ_PASSWORD:-$(random_password)}"
 kubectl create namespace infra --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace elastiflix --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic redis-secret -n infra \
-  --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
+  --from-literal=redis-password="${REDIS_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic rabbitmq-secret -n infra \
-  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}" \
+  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic backend-secret -n elastiflix \
-  --from-literal=redis-password="${REDIS_PASSWORD:-elastiflix-redis-pass}" \
-  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD:-elastiflix-rabbit-pass}" \
+  --from-literal=redis-password="${REDIS_PASSWORD}" \
+  --from-literal=rabbitmq-password="${RABBITMQ_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "🔄 8. Deploying Argo CD Applications (GitOps)..."
+echo "🔄 8. Deploying Argo CD project and Applications (GitOps)..."
+kubectl apply -f kubernetes/argocd-project.yaml
+kubectl apply -f kubernetes/argocd-namespaces.yaml
 kubectl apply -f kubernetes/argocd-app.yaml
 kubectl apply -f kubernetes/argocd-infra.yaml
 kubectl apply -f kubernetes/argocd-elk.yaml
@@ -69,9 +112,17 @@ kubectl apply -f kubernetes/argocd-ingress.yaml
 kubectl apply -f kubernetes/monitoring-ingress.yaml
 
 echo ""
-echo "✅ BOOTSTRAP COMPLETE! Your local cluster is fully restored via GitOps."
-echo "⚠️  IMPORTANT: Open an Administrator PowerShell and run these commands:"
-echo "   net stop was /y"
-echo "   minikube tunnel"
+echo "✅ Bootstrap complete. Argo CD 3.6.3, Rollouts ${ARGO_ROLLOUTS_VERSION}, Falco ${FALCO_CHART_VERSION}."
+echo "⚠️  Open an Administrator PowerShell and run: net stop was /y && minikube tunnel"
 echo ""
-echo "🔑 Argo CD Login: http://argocd.local | admin / admin123"
+echo "🔑 Argo CD: http://argocd.local | user: admin"
+if [ -n "${ARGOCD_ADMIN_PASSWORD}" ]; then
+  echo "   initial password: ${ARGOCD_ADMIN_PASSWORD}"
+  echo "   Change it immediately: argocd account update-password"
+else
+  echo "   initial password: retrieve with 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d'"
+fi
+echo ""
+echo "ℹ️  The manifests in kubernetes/application reference a commit-SHA image tag."
+echo "   For local testing, pin the Rollout/Deployment to the tag built in step 2"
+echo "   with a local-only manifest edit, or push the images and let CI promote them."

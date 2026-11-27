@@ -201,7 +201,21 @@ directly to the API on `:17700`, then waits for Filebeat to ship them.
 
 ```bash
 curl -s 'http://localhost:9200/elastiflix-logs-*/_count'
-# {"count":85,"_shards":{...}}   # 17 queries x 5 rounds
+# {"count":150,...}
+```
+
+**Why not 90?** `generate-traffic.sh` sends 18 queries x 5 rounds = 90
+requests, and the backend writes **one log line per request** — but not one
+*document*: the stream carries the whole container's stdout, so startup lines
+(`startup`, `rabbitmq_connected`, a stray `redis_error`) arrive too, and the
+frontend container is tailed on the same input. Treat the count as "more than
+zero, roughly the number of requests", not as an equality. To count precisely,
+filter on `search_type`:
+
+```bash
+curl -s 'http://localhost:9200/elastiflix-logs-*/_count' \
+  -H 'Content-Type: application/json' \
+  -d '{"query":{"exists":{"field":"search_query"}}}'
 ```
 
 If that count is 0, the problem is Filebeat → Logstash, not the dashboard:

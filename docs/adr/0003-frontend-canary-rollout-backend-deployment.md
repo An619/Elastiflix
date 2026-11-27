@@ -15,7 +15,9 @@ Both tiers are stateless and 2-replica, but their blast radii and verification s
 
 ## Consequences
 
-- ✅ The most user-visible tier ships gradually; a broken build exposes ≤20% of sessions for 30 seconds.
+- ✅ The most user-visible tier ships gradually: 10% → 25% → 50% → 100%, each step gated by an AnalysisRun over request volume and 5xx ratio. A failed analysis aborts and returns traffic to the stable Service.
+- ⚠️ Without a `trafficRouting` block the split is the Rollouts *basic canary* (ReplicaSet proportion), not exact ingress-level weighting.
+- ⚠️ The analysis reads service-level metrics, not per-canary metrics, so failures masked by stable traffic are not attributed to the canary.
 - ✅ Rollback is one command, no rebuild.
 - ⚠️ Two deployment kinds to understand; runbooks must mention both paths.
 - ⚠️ Backend canary remains a documented trade-off; next step is analysis-driven canary (Prometheus-metric abort) for the backend too.

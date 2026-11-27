@@ -35,7 +35,7 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 2. **On merge to `main`** the same gates go green, then `docker-push` builds both images with `docker/build-push-action` and pushes them to Docker Hub tagged with the **commit SHA** (never `latest`).
 3. The pipeline then **rewrites `image:` fields** in `kubernetes/application/` and commits them back with `[skip ci]`.
 4. **Argo CD** (watching `HEAD` of this repo, automated sync + `selfHeal` + `prune`) detects the manifest diff and converges the cluster to it.
-5. **Argo Rollouts** releases the new frontend gradually: **20% canary → pause 30s → 100%**. A broken build never receives full traffic.
+5. **Argo Rollouts** releases the new frontend gradually: **10% → 25% → 50% → 100%**, each step gated by an AnalysisRun on request volume and 5xx ratio. A failed analysis aborts and returns traffic to the stable Service.
 6. At runtime, **NGINX Ingress** routes `elastiflix.local` → frontend and `api.elastiflix.local` → backend.
 7. The **backend** serves search (lexical / semantic / hybrid / rerank), answers autocomplete, caches responses in **Redis**, publishes search analytics events to **RabbitMQ**, and exposes `/metrics` + `/healthz`.
 8. **Observability** is wired in, not bolted on: Filebeat/Metricbeat → Logstash → Elasticsearch → Kibana for logs, Prometheus + Grafana for metrics, Velero + MinIO for backups.
@@ -79,7 +79,7 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 | **Docker Compose** | Local one-shot ELK | Full stack + beats + app in one command (`start.sh`) — the fastest way to hack on this repo |
 | **Kubernetes (Minikube / EKS)** | Container orchestration | Namespaces: `elastiflix`, `infra` (Redis/RabbitMQ), `elastic-stack`, `monitoring`, `argocd`, `velero` |
 | **NGINX Ingress Controller** | Edge routing | Host-based rules: app, API, Kibana, Argo CD, Grafana, MinIO |
-| **Argo Rollouts** | Progressive delivery | Frontend canary Rollout: `20% → pause 30s → 100%` with automated analysis hooks |
+| **Argo Rollouts** | Progressive delivery | Frontend canary Rollout: `10% → 25% → 50% → 100%` with Prometheus-backed AnalysisRuns that abort on failure |
 | **Helm** | Chart management | Infra values (`helm/elasticsearch`, `helm/redis`, `helm/rabbitmq`) + installs Argo CD, ESO, ALB controller, kube-prometheus-stack |
 
 ### 🔁 GitOps & delivery
@@ -92,27 +92,32 @@ Elastiflix is a **production-grade, 3-tier movie-search application** (React · 
 | **External Secrets Operator** | Cloud secrets sync | EKS: syncs AWS Secrets Manager → K8s Secrets via **IRSA** (no static AWS keys); IRSA role scoped to `secret:elastiflix/*` |
 | **GitHub Actions** | CI/CD engine | Reusable workflows fanned out by `devsecops.yml`; all third-party actions **pinned to commit SHAs** |
 | **Velero + MinIO** | Backup & restore | Namespace `velero` backs up cluster state to S3-compatible MinIO (`minio.yaml`) |
-| **GitHub → merge bot** | GitOps trigger | `docker-push` pipeline commits updated image tags to `main` (`[skip ci]`) — closing the GitOps loop with zero humans |
+| **Reviewed promotion** | GitOps trigger | `docker-push` publishes `<sha>`-tagged, signed images and reports their digests; promoting one into the manifests is a reviewed commit |
 
 ### 🛡️ DevSecOps & quality gates
 
 | Gate | Tool | When | Failure behavior |
 |---|---|---|---|
-| Code tests | **Jest (frontend)** · **`node --test` + supertest (backend)** · **`terraform validate`** · **kubeconform** | PR + main | build fails |
+| Code tests | **Jest (frontend)** · **`node --test` + supertest (backend)** · **`terraform fmt -check` + `validate`** · **kubeconform `-strict`** · **actionlint** · **Ansible syntax check** | PR + main | build fails |
+| Observability config | **`scripts/validate-observability.py`** — PromQL, dashboard JSON, selector wiring, runbook links | PR + main | build fails |
 | Secret scanning | **Gitleaks** | PR + main | build fails |
 | Dependency audit | **npm audit** (`--omit=dev`, prod only) · **pip-audit** | PR + main, high+ | build fails |
 | Dockerfile lint | **Hadolint** (prod & dev Dockerfiles) | PR + main | build fails |
 | SAST | **SonarCloud** — Quality Gate: 0 new issues, **≥ 80% coverage on new code**, 0% duplication | PR + main | build fails |
 | Image scan | **Trivy** — CRITICAL/HIGH fixable CVEs | PR + main | build fails |
-| IaC scan | **Checkov** — Terraform **hard gate**; Kubernetes report-only (~105 accepted findings, tracked as tech debt) | PR + main | Terraform: fails · K8s: report |
-| Action hygiene | **SHA-pinned actions**, minimal `permissions:`, `docker-push` main-only | always | — |
+| IaC scan | **Checkov** — Terraform and Kubernetes are both **hard gates**; Kubernetes suppressions are per-resource annotations with a written reason | PR + main | build fails |
+| Action hygiene | **SHA-pinned actions**, workflow-wide `contents: read`, per-job permissions, `docker-push` main-only and write-free | always | — |
+| Supply chain | **SBOM + provenance** on every published image, **cosign** keyless signature, verified in the publishing job | main | build fails |
+| Backup tooling | **`scripts/test-elasticsearch-snapshot.sh`** — mocked-HTTP tests of snapshot/restore safeguards | PR + main | build fails |
 
 ### 📊 Observability
 
 | Tool | Scope |
 |---|---|
 | **kube-prometheus-stack 58.2.2** (Argo CD app) | Prometheus + Grafana; alertmanager disabled; namespace `monitoring`; Grafana served at `grafana.local` (Ingress) |
-| **Backend `/metrics`** | Hand-rolled Prometheus text exposition: requests, search requests, cache hits, errors |
+| **Backend `/metrics`** | Prometheus text exposition with bounded `route`/`status_class` labels, a latency histogram, cache/search/error counters and a Redis-reachability gauge |
+| **SLO** | Proposed 99.5% / 7-day availability objective with multi-window burn-rate alerts, a metrics-missing alert, and Grafana dashboard (`kubernetes/monitoring/`) |
+| **Alert delivery** | **Not configured** — Alertmanager is disabled pending an approved destination and owner. Alerts are visible in Prometheus/Grafana only |
 | **Kibana dashboards** | Movies catalog explore, application logs, infrastructure health (`elk/`, `load-dashboards.sh`) |
 | **Structured logs** | `level`, `service`, `path`, `status`, `duration_ms`, `search_type`, `cache_hit` per line |
 
@@ -178,7 +183,9 @@ frontend/          React 18 SPA (@elastic/eui, react-search-ui) + nginx prod ima
 backend/           Express (ESM) API — search/semantic/hybrid/rerank + cache + events
 data-loader/       Python bulk indexer for the movie catalog (+ config templates)
 elk/               Filebeat · Metricbeat · Logstash (pipelines, index templates)
-kubernetes/        application/ (Rollout+Deployment, Ingress) · infra/ · elastic-stack/ · aws/
+kubernetes/        application/ (Rollout, Deployment, HPA/PDB, NetworkPolicy) · infra/ · elastic-stack/
+                   monitoring/ (ServiceMonitor, SLO rules, dashboard) · argocd-*.yaml (project + Applications)
+                   namespaces/ (Pod Security Admission labels) · aws/
 helm/              values for elasticsearch / redis / rabbitmq charts
 terraform/         VPC · EKS · IAM/IRSA · ALB · bastion (private, SSM)
 ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB controller)
@@ -194,7 +201,8 @@ ansible/           Cluster bootstrap (Argo CD · External Secrets · ALB control
 | `REDIS_URL` *or* `REDIS_HOST` + `REDIS_PASSWORD` | backend | Redis cache; backend runs fine without it |
 | `RABBITMQ_URL` *or* `RABBITMQ_HOST` + `RABBITMQ_USER`/`RABBITMQ_PASSWORD` | backend | Events to RabbitMQ; optional |
 | `LOCAL` | backend | `true` enables CORS for the dev origins only |
-| `REDIS_PASSWORD` / `RABBITMQ_PASSWORD` | `bootstrap.sh`, Helm, K8s Secrets | Local secret values — **never commit real passwords** (use kubeseal + Sealed Secrets / ESO) |
+| `REDIS_PASSWORD_FILE` / `RABBITMQ_PASSWORD_FILE` | backend (K8s) | Path to a mounted Secret file; the app refuses any path outside its allowlist. Passwords are no longer read from environment variables in-cluster |
+| `REDIS_PASSWORD` / `RABBITMQ_PASSWORD` | `bootstrap.sh`, Docker Compose, local dev | Local-only values (`bootstrap.sh` generates random ones) — **never commit real passwords** |
 
 ## 🧪 Tests
 

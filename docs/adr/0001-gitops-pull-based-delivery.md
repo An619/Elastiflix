@@ -16,7 +16,9 @@ The pipeline must land changes in Kubernetes without giving CI permanent cluster
 **Pull-based GitOps with Argo CD** (option 2). Specifically:
 
 - `docker-push` only builds/pushes images and bumps `image:` tags in `kubernetes/application/` (committing back with `[skip ci]`).
-- Argo CD (see `kubernetes/argocd-app.yaml`, `argocd-infra.yaml`, `argocd-elk.yaml`, `argocd-ingress.yaml`, `argocd-monitoring.yaml`) watches `HEAD` of `main`, with `automated.prune`, `automated.selfHeal`, `syncOptions: CreateNamespace=true`.
+- Five Applications (`namespaces` first, then application, infra, elastic-stack, monitoring) run inside the `elastiflix` AppProject defined in `kubernetes/argocd-project.yaml`, which limits source repositories, destinations and cluster-scoped kinds.
+- Each Application tracks the branch `main` (not `HEAD`), with `automated.prune`, `automated.selfHeal`, `PrunePropagationPolicy=foreground`, `PruneLast=true`, and an ownership finalizer.
+- `namespaces` has `prune: false`: pruning a Namespace deletes every workload in it.
 - Rollback = `git revert` of the tag-bump commit; Argo CD reconciles the cluster back automatically.
 
 ## Consequences

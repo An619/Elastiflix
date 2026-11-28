@@ -102,6 +102,8 @@ kubectl create secret generic backend-secret -n elastiflix \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "🔄 8. Deploying Argo CD project and Applications (GitOps)..."
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/namespaces/namespaces.yaml
 kubectl apply -f kubernetes/argocd-project.yaml
 kubectl apply -f kubernetes/argocd-namespaces.yaml
 kubectl apply -f kubernetes/argocd-app.yaml

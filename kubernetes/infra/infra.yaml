@@ -88,12 +88,22 @@ spec:
               drop: ["ALL"]
           readinessProbe:
             exec:
-              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+              command:
+                [
+                  "sh",
+                  "-c",
+                  'REDISCLI_AUTH="$(cat /run/secrets/redis/redis-password)" redis-cli ping | grep -q PONG',
+                ]
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/redis/redis-password)\" redis-cli ping | grep -q PONG"]
+              command:
+                [
+                  "sh",
+                  "-c",
+                  'REDISCLI_AUTH="$(cat /run/secrets/redis/redis-password)" redis-cli ping | grep -q PONG',
+                ]
             initialDelaySeconds: 30
             periodSeconds: 20
             failureThreshold: 3
@@ -178,16 +188,19 @@ spec:
       containers:
         - name: rabbitmq
           image: rabbitmq:3-management-alpine
-          # RabbitMQ reads RABBITMQ_DEFAULT_PASS (not `rabbitmq-password`),
-          # so map the Secret key explicitly.
-          env:
-            - name: RABBITMQ_DEFAULT_USER
-              value: "user"
-            # The official image reads the trailing _FILE variant and exports
-            # RABBITMQ_DEFAULT_PASS itself, so the password never appears in
-            # the pod spec, environment dump, or argv.
-            - name: RABBITMQ_DEFAULT_PASS_FILE
-              value: /run/secrets/rabbitmq/rabbitmq-password
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              umask 077
+              password=$(cat /run/secrets/rabbitmq/rabbitmq-password)
+              [ -n "$password" ] || { echo "rabbitmq password is empty" >&2; exit 1; }
+              cat > /etc/rabbitmq/conf.d/10-elastiflix.conf <<CONF
+              default_user = user
+              default_pass = ${password}
+              CONF
+              exec docker-entrypoint.sh rabbitmq-server
           ports:
             - containerPort: 5672
               name: amqp

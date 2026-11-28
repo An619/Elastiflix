@@ -110,25 +110,20 @@ spec:
             capabilities:
               drop: ["ALL"]
           startupProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: beats
             failureThreshold: 30
             periodSeconds: 10
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: beats
             initialDelaySeconds: 20
             periodSeconds: 10
-            timeoutSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: beats
             initialDelaySeconds: 60
             periodSeconds: 20
-            timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
             - name: pipeline

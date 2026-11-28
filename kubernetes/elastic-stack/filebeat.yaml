@@ -34,7 +34,13 @@ metadata:
 data:
   filebeat.yml: |-
     filebeat.inputs:
-    - type: container
+    - type: filestream
+      id: containers
+      prospector.scanner.symlinks: true
+      parsers:
+        - container:
+            stream: all
+            format: auto
       paths:
         - /var/log/containers/*.log
       processors:
